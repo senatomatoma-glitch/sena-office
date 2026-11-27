@@ -17,9 +17,10 @@ jobs:
       - env:
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
           OFFICE_PIN: ${{ secrets.OFFICE_PIN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python3 scripts/run_office_sync.py
       - run: |
           git config user.name "sena-office-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add index.html .office_sync_hash
+          git add index.html .office_sync_hash .office_sync_state.json
           git diff --cached --quiet || (git commit -m "Auto sync office sheet" && git pull --rebase origin main && git push)
