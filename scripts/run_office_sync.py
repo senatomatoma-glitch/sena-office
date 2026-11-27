@@ -42,7 +42,7 @@ def get_google_token(sa_info: dict) -> str:
     jwt_token = f"{header}.{claim}.{b64url(sig)}"
 
     body = urllib.parse.urlencode({
-        "grant_type": "urn:ietf:params:oauth:jwt-bearer",
+        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
         "assertion": jwt_token,
     }).encode("utf-8")
     req = urllib.request.Request(
