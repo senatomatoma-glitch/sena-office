@@ -96,6 +96,20 @@
     cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 4px;
   }
   .pin .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  .head-bubble {
+    position: absolute; transform: translate(-50%, -50%);
+    background: rgba(255,255,255,0.96); border: 1.5px solid #C97A40;
+    border-radius: 10px; padding: 2px 7px; font-size: 9.5px; font-weight: 800;
+    color: #5C3A21; box-shadow: 0 2px 8px rgba(0,0,0,.18);
+    cursor: pointer; white-space: nowrap; z-index: 3;
+  }
+  .head-bubble::after {
+    content: ""; position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%);
+    border-width: 5px 4px 0 4px; border-style: solid;
+    border-color: rgba(255,255,255,0.96) transparent transparent transparent;
+  }
+  .head-bubble.boss { border-color: #D9383A; color: #D9383A; background: #FFF5F5; }
+  .head-bubble.boss::after { border-color: #FFF5F5 transparent transparent transparent; }
   .section { display: none; padding: 0 14px; }
   .section.active { display: block; }
   .subhead { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 8px; }
@@ -206,11 +220,16 @@
     </div>
     <div class="map-wrap">
       <img src="office.png" alt="세나 비서실 부서별 3D 클레이 오피스">
+      <button class="head-bubble boss" id="hb-세나" style="left:49%;top:7%;" onclick="showTab('approval', document.querySelectorAll('.tab-btn')[1])">👑 승인 0건</button>
+      <button class="head-bubble" id="hb-미향" style="left:25%;top:37%;" onclick="openMember('미향')">💬 ...</button>
+      <button class="head-bubble" id="hb-미유" style="left:74%;top:39%;" onclick="openMember('미유')">💬 ...</button>
+      <button class="head-bubble" id="hb-아카네" style="left:26%;top:68%;" onclick="openMember('아카네')">💬 ...</button>
+      <button class="head-bubble" id="hb-아이미" style="left:74%;top:69%;" onclick="openMember('아이미')">💬 ...</button>
       <button class="pin" style="left:49%;top:31%;" onclick="openBoss()"><span class="pulse"></span>🐯 대장실 · 세나</button>
       <button class="pin" style="left:24%;top:58%;" onclick="openMember('미향')"><span class="pulse"></span>💙 총대장실 · 미향</button>
       <button class="pin" style="left:74%;top:60%;" onclick="openMember('미유')"><span class="pulse"></span>🦉 블로그실 · 미유</button>
-      <button class="pin" style="left:33%;top:90%;" onclick="openMember('아카네')"><span class="pulse"></span>🦊 숙박메일실 · 아카네</button>
-      <button class="pin" style="left:65%;top:90%;" onclick="openMember('아이미')"><span class="pulse"></span>🐱 전략데이터실 · 아이미</button>
+      <button class="pin" style="left:26%;top:91%;" onclick="openMember('아카네')"><span class="pulse"></span>🦊 숙박메일실 · 아카네</button>
+      <button class="pin" style="left:74%;top:91%;" onclick="openMember('아이미')"><span class="pulse"></span>🐱 전략데이터실 · 아이미</button>
     </div>
     <div style="padding:0 14px;">
       <div class="subhead"><h3>📋 실시간 접수 큐</h3><span id="map-q-count"></span></div>
@@ -314,7 +333,7 @@ async function unlock(autoPw) {
     document.getElementById('lock-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     document.getElementById('hdr-sub').innerText = `부서별 5실 · ${DATA.updated}`;
-    renderMapQueue(); renderApproval(); renderQueue(); renderOpinions(); renderMembers();
+    renderMapQueue(); renderMapBubbles(); renderApproval(); renderQueue(); renderOpinions(); renderMembers();
   } catch (e) {
     localStorage.removeItem('sena_office_pin');
     document.getElementById('err-msg').innerText = '비밀번호가 맞지 않아!';
@@ -367,6 +386,29 @@ function renderMapQueue() {
   ).join('');
   const list = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=> curMapStatus==='전체' ? true : (curMapStatus==='보류' ? (t.status==='보류'||t.status==='접수') : t.status===curMapStatus));
   document.getElementById('map-queue-list').innerHTML = list.map(({t,i})=>ticketCardHtml(t,i)).join('');
+}
+function renderMapBubbles() {
+  const appCnt = DATA.tickets.filter(t => isNeedApproval(t)).length;
+  const bossEl = document.getElementById('hb-세나');
+  if (bossEl) bossEl.innerText = appCnt > 0 ? `👑 대표승인 ${appCnt}건` : '👑 대기 0건';
+  ['미향', '미유', '아카네', '아이미'].forEach(name => {
+    const el = document.getElementById('hb-' + name);
+    if (!el) return;
+    const run = DATA.tickets.filter(t => t.owner === name && t.status === '실행 중');
+    const ver = DATA.tickets.filter(t => t.verifier === name && t.status === '검증 중');
+    const pool = run.length ? run : ver;
+    const tag = run.length ? '💬' : (ver.length ? '🔍' : '☕');
+    if (!pool.length) {
+      el.innerText = `${tag} 대기중`;
+      return;
+    }
+    const sorted = [...pool].sort((a,b) => ((a.type==='단발'?0:1) - (b.type==='단발'?0:1)));
+    const ids = sorted.map(t => (t.ticket || '').trim()).filter(Boolean);
+    if (ids.length === 1) el.innerText = `${tag} ${ids[0]}`;
+    else if (ids.length === 2) el.innerText = `${tag} ${ids[0]}·${ids[1].replace('T-','')}`;
+    else if (ids.length > 2) el.innerText = `${tag} ${ids[0]} 외 ${ids.length - 1}`;
+    else el.innerText = `${tag} ${pool.length}건`;
+  });
 }
 function isNeedApproval(t) {
   if (!t || (t.status || '').includes('완료')) return false;
