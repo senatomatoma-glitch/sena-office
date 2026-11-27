@@ -191,6 +191,7 @@
 
   <nav>
     <button class="tab-btn active" onclick="showTab('map', this)">🗺️ 맵</button>
+    <button class="tab-btn" onclick="showTab('approval', this)">👑 대표승인 <span id="nav-app-cnt" style="background:#FF4D4F;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;display:none;">0</span></button>
     <button class="tab-btn" onclick="showTab('queue', this)">📋 큐</button>
     <button class="tab-btn" onclick="showTab('meeting', this)">💬 회의</button>
     <button class="tab-btn" onclick="showTab('status', this)">📊 부서</button>
@@ -216,6 +217,15 @@
       <div class="stat-strip" id="map-stat-strip"></div>
       <div id="map-queue-list"></div>
     </div>
+  </div>
+
+  <div id="tab-approval" class="section">
+    <div class="banner" style="border-radius:14px;margin-bottom:12px;padding:12px 14px;">
+      <div class="banner-tag">👑 대표 최종 승인 · 적용 대기</div>
+      <h2 style="font-size:15px;">세나야가 직접 확인·적용할 건만 모았어</h2>
+      <p style="font-size:11px;">상태가 ‘결정 필요’이거나 최종 적용·승인이 필요한 티켓이야. 누르면 상세 내용과 링크가 열려요.</p>
+    </div>
+    <div id="approval-list"></div>
   </div>
 
   <div id="tab-queue" class="section">
@@ -304,7 +314,7 @@ async function unlock(autoPw) {
     document.getElementById('lock-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     document.getElementById('hdr-sub').innerText = `부서별 5실 · ${DATA.updated}`;
-    renderMapQueue(); renderQueue(); renderOpinions(); renderMembers();
+    renderMapQueue(); renderApproval(); renderQueue(); renderOpinions(); renderMembers();
   } catch (e) {
     localStorage.removeItem('sena_office_pin');
     document.getElementById('err-msg').innerText = '비밀번호가 맞지 않아!';
@@ -357,6 +367,24 @@ function renderMapQueue() {
   ).join('');
   const list = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=> curMapStatus==='전체' ? true : (curMapStatus==='보류' ? (t.status==='보류'||t.status==='접수') : t.status===curMapStatus));
   document.getElementById('map-queue-list').innerHTML = list.map(({t,i})=>ticketCardHtml(t,i)).join('');
+}
+function isNeedApproval(t) {
+  if (!t || (t.status || '').includes('완료')) return false;
+  if (t.status === '결정 필요') return true;
+  const txt = `${t.title || ''} ${t.memo || ''}`;
+  return /세나\s*직접|최종\s*적용은\s*세나|세나\s*승인|대표\s*승인|대표승인|세나\s*결정/.test(txt);
+}
+function renderApproval() {
+  const list = DATA.tickets.map((t,i)=>({t,i})).filter(({t}) => isNeedApproval(t));
+  const badge = document.getElementById('nav-app-cnt');
+  if (badge) {
+    badge.innerText = list.length;
+    badge.style.display = list.length > 0 ? 'inline-block' : 'none';
+  }
+  const el = document.getElementById('approval-list');
+  if (el) {
+    el.innerHTML = list.map(({t,i})=>ticketCardHtml(t,i)).join('') || '<p class="t-meta" style="text-align:center;padding:24px;">지금 대표 승인·적용 대기 중인 건이 없어!</p>';
+  }
 }
 function setQStatus(st, btn) { curQStatus=st; document.querySelectorAll('#status-filters .f-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); renderQueue(); }
 function setQOwner(ow, btn) { curQOwner=ow; document.querySelectorAll('#owner-filters .f-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); renderQueue(); }
