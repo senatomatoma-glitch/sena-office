@@ -123,7 +123,7 @@ def close_min(open_s, close_s):
 
 
 # ---------------------------------------------------------------- estama
-EXCLUDED_ESTAMA_SHOP_IDS = {'25295'}  # バンクスパ(남성 제모 살롱, 멘즈에스테 아님)
+EXCLUDED_ESTAMA_SHOP_IDS = {'25295', '50297'}  # バンクスパ(남성 제모 살롱), イコールラブ♡(사기 회사, 세나 지시 영구 제외)
 
 
 def parse_estama_shop_ranking(text):
