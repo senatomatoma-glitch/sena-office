@@ -83,9 +83,10 @@
   .map-wrap img { width: 100%; display: block; }
   .pin {
     position: absolute; transform: translate(-50%, -50%);
-    background: rgba(255,253,249,0.95); border: 1.5px solid #D8B894;
-    border-radius: 14px; padding: 4px 9px; font-size: 11px; font-weight: 800;
-    color: var(--brown); box-shadow: 0 3px 10px rgba(0,0,0,.18);
+    background: rgba(255,253,249,0.92); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(216,184,148,0.9);
+    border-radius: 12px; padding: 3px 8px; font-size: 10.5px; font-weight: 800;
+    color: var(--brown); box-shadow: 0 3px 10px rgba(0,0,0,.20);
     cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 4px;
   }
   .pin .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
@@ -197,11 +198,11 @@
     </div>
     <div class="map-wrap">
       <img src="office.png" alt="세나 비서실 부서별 3D 클레이 오피스">
-      <button class="pin" style="left:50%;top:29%;" onclick="openBoss()"><span class="pulse"></span>🐯 대장실 · 세나</button>
-      <button class="pin" style="left:26%;top:49%;" onclick="openMember('미향')"><span class="pulse"></span>💙 총대장실 · 미향</button>
-      <button class="pin" style="left:72%;top:49%;" onclick="openMember('미유')"><span class="pulse"></span>🦉 블로그실 · 미유</button>
-      <button class="pin" style="left:26%;top:80%;" onclick="openMember('아카네')"><span class="pulse"></span>🦊 숙박메일실 · 아카네</button>
-      <button class="pin" style="left:72%;top:80%;" onclick="openMember('아이미')"><span class="pulse"></span>🐱 전략데이터실 · 아이미</button>
+      <button class="pin" style="left:49%;top:31%;" onclick="openBoss()"><span class="pulse"></span>🐯 대장실 · 세나</button>
+      <button class="pin" style="left:24%;top:58%;" onclick="openMember('미향')"><span class="pulse"></span>💙 총대장실 · 미향</button>
+      <button class="pin" style="left:74%;top:60%;" onclick="openMember('미유')"><span class="pulse"></span>🦉 블로그실 · 미유</button>
+      <button class="pin" style="left:33%;top:90%;" onclick="openMember('아카네')"><span class="pulse"></span>🦊 숙박메일실 · 아카네</button>
+      <button class="pin" style="left:65%;top:90%;" onclick="openMember('아이미')"><span class="pulse"></span>🐱 전략데이터실 · 아이미</button>
     </div>
     <div style="padding:0 14px;">
       <div class="subhead"><h3>📋 실시간 접수 큐</h3><span id="map-q-count"></span></div>
