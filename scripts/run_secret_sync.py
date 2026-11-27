@@ -77,7 +77,7 @@ def main():
 
     salt = os.urandom(16)
     iv = os.urandom(12)
-    key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000).derive(b"0710")
+    key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000).derive(os.environ["SECRET_PIN"].encode("utf-8"))
     ct = AESGCM(key).encrypt(iv, payload, None)
 
     out_path = os.path.join(ROOT, "secret_enc.json")
