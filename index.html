@@ -60,7 +60,7 @@
     background: var(--card); color: var(--brown); border: 1px solid var(--border);
     padding: 6px 11px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer;
   }
-  nav { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; padding: 4px 12px 12px; }
+  nav { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding: 4px 12px 12px; }
   .s-card { display: flex; gap: 11px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 11px; margin-bottom: 9px; align-items: flex-start; }
   .s-img { width: 74px; height: 96px; object-fit: cover; border-radius: 12px; background: #EFE3D3; flex-shrink: 0; }
   .s-body { flex: 1; min-width: 0; }
@@ -69,7 +69,7 @@
   .s-btn.call { background: var(--green-bg); color: var(--green); border-color: #B7E4CE; }
   .tab-btn {
     border: 1px solid var(--border); background: var(--card); color: var(--brown);
-    padding: 9px 2px; border-radius: 14px; font-size: 11.5px; font-weight: 700; cursor: pointer;
+    padding: 8px 1px; border-radius: 13px; font-size: 10.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
   }
   .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .banner {
@@ -205,7 +205,7 @@
 
   <nav>
     <button class="tab-btn active" onclick="showTab('map', this)">🗺️ 맵</button>
-    <button class="tab-btn" onclick="showTab('approval', this)">👑 대표승인 <span id="nav-app-cnt" style="background:#FF4D4F;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;display:none;">0</span></button>
+    <button class="tab-btn" onclick="showTab('approval', this)">👑 승인 <span id="nav-app-cnt" style="background:#FF4D4F;color:#fff;border-radius:10px;padding:1px 5px;font-size:9px;display:none;">0</span></button>
     <button class="tab-btn" onclick="showTab('queue', this)">📋 큐</button>
     <button class="tab-btn" onclick="showTab('meeting', this)">💬 회의</button>
     <button class="tab-btn" onclick="showTab('status', this)">📊 부서</button>
@@ -411,10 +411,33 @@ function renderMapBubbles() {
   });
 }
 function isNeedApproval(t) {
-  if (!t || (t.status || '').includes('완료')) return false;
-  if (t.status === '결정 필요') return true;
-  const txt = `${t.title || ''} ${t.memo || ''}`;
-  return /세나\s*직접|최종\s*적용은\s*세나|세나\s*승인|대표\s*승인|대표승인|세나\s*결정/.test(txt);
+  return Boolean(t && t.status === '결정 필요');
+}
+function shortApprovalAction(t) {
+  const tk = (t.ticket || '').trim();
+  if (tk === 'T-163') return '아카네 리서치·적용안 확인하고, 에어비앤비 5개 방에 직접 최종 적용해줘!';
+  if (tk === 'T-070') return 'Travelpayouts PayPal(Sonuk Yamada) 결제 확인 링크 클릭 승인해줘!';
+  const m = (t.memo || '');
+  const tag = m.match(/\[(?:세나\s*할\s*일|대표\s*승인|결론)\s*:\s*([^\]]+)\]/);
+  if (tag) return tag[1].trim();
+  const cleanTitle = (t.title || '').replace(/^\[[^\]]+\]\s*/, '').trim();
+  return (cleanTitle.length > 55 ? cleanTitle.slice(0, 55) + '…' : cleanTitle) + ' — 확인 후 승인해줘!';
+}
+function approvalCardHtml(t, idx) {
+  const shortTitle = (t.title || '').replace(/^\[[^\]]+\]\s*/, '').trim();
+  const titleShow = shortTitle.length > 36 ? shortTitle.slice(0, 36) + '…' : shortTitle;
+  const actionTxt = shortApprovalAction(t);
+  return `<div class="card" onclick="openTicket(${idx})">
+    <div class="card-head">
+      <span class="t-id">${esc(t.ticket||'티켓')} · ${esc(t.area)}</span>
+      ${statusBadge(t.status)}
+    </div>
+    <div class="t-title" style="font-size:13px;color:#6E5847;margin-bottom:6px;">${esc(titleShow)}</div>
+    <div style="background:#FFF4F2;border:1px solid #F6C5BE;border-radius:10px;padding:9px 11px;font-size:13px;font-weight:800;color:#B92B27;line-height:1.45;">
+      👉 할 일: ${esc(actionTxt)}
+    </div>
+    <div class="t-meta" style="margin-top:6px;">담당: ${esc(t.owner||'-')} · 마감: ${esc(t.deadline||'-')} (누르면 전체 내용)</div>
+  </div>`;
 }
 function renderApproval() {
   const list = DATA.tickets.map((t,i)=>({t,i})).filter(({t}) => isNeedApproval(t));
@@ -425,7 +448,7 @@ function renderApproval() {
   }
   const el = document.getElementById('approval-list');
   if (el) {
-    el.innerHTML = list.map(({t,i})=>ticketCardHtml(t,i)).join('') || '<p class="t-meta" style="text-align:center;padding:24px;">지금 대표 승인·적용 대기 중인 건이 없어!</p>';
+    el.innerHTML = list.map(({t,i})=>approvalCardHtml(t,i)).join('') || '<p class="t-meta" style="text-align:center;padding:24px;">지금 대표 승인·적용 대기 중인 건이 없어!</p>';
   }
 }
 function setQStatus(st, btn) { curQStatus=st; document.querySelectorAll('#status-filters .f-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); renderQueue(); }
