@@ -692,6 +692,7 @@ def main():
             ps = parse_estama_cast(txt, r['shop'], r['sid'])
             st = shop_status.setdefault(r['shop'], {})
             st['estama_cast'] = len(ps)
+            st['has_review'] = ('shop-nav-box__review' in txt) or bool(re.search(r'口コミ[^<]{0,20}\d+\s*件', txt))
             for pid, p in ps.items():
                 key = f"{r['shop']}|{norm_name(p['name'])}"
                 rec = people.setdefault(key, dict(shop=r['shop'], name=p['name'], sources=[], today=None))

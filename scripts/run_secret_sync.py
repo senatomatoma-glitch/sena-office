@@ -22,13 +22,22 @@ def main():
 
     sbc.SHOPS_LIVE = live.get("shops") or {}
     shops = sbc.SHOPS_LIVE
+    shop_status = live.get("shop_status") or {}
     b = sbc.build(live, cache, now)
+
+    def review_ok(shop_name):
+        st = shop_status.get(shop_name) or {}
+        if "has_review" in st and not st["has_review"]:
+            return False
+        return True
 
     # Collect core picks + all 🟢/🟡 E+ people
     seen = set()
     items = []
 
     def add_person(p, tag=""):
+        if not review_ok(p.get("shop") or ""):
+            return
         key = (p.get("shop") or "", sbc.norm_name(p.get("name") or ""))
         if key in seen:
             return
