@@ -215,8 +215,8 @@
 
   <div id="tab-map" class="section active" style="padding:0;">
     <div class="banner">
-      <div class="banner-tag">👑 부서별 5실 완비</div>
-      <h2>세나 대장님, 각 부서 방을 눌러 봐!</h2>
+      <div class="banner-tag">👑 CEO 세나</div>
+      <h2>세나 대표님, 각 부서 방을 물어보세요</h2>
       <p>방 캐릭터를 누르면 담당 업무가, 아래 접수 큐 카드를 누르면 상세 메모까지 전부 열려요.</p>
     </div>
     <div class="map-wrap">
@@ -226,7 +226,7 @@
       <button class="head-bubble" id="hb-미유" style="left:74%;top:39%;" onclick="openMember('미유')">💬 ...</button>
       <button class="head-bubble" id="hb-아카네" style="left:26%;top:68%;" onclick="openMember('아카네')">💬 ...</button>
       <button class="head-bubble" id="hb-아이미" style="left:74%;top:69%;" onclick="openMember('아이미')">💬 ...</button>
-      <button class="pin" style="left:49%;top:31%;" onclick="openBoss()"><span class="pulse"></span>🐯 대장실 · 세나</button>
+      <button class="pin" style="left:49%;top:31%;" onclick="openBoss()"><span class="pulse"></span>👑 CEO · 세나</button>
       <button class="pin" style="left:24%;top:58%;" onclick="openMember('미향')"><span class="pulse"></span>💙 총괄책임부장 · 미향</button>
       <button class="pin" style="left:74%;top:60%;" onclick="openMember('미유')"><span class="pulse"></span>🌿 SNS부 · 미유</button>
       <button class="pin" style="left:26%;top:91%;" onclick="openMember('아카네')"><span class="pulse"></span>🔑 숙박업부 · 아카네</button>
@@ -571,7 +571,7 @@ function openMember(name) {
 }
 function openBoss() {
   const dec = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=>t.status==='결정 필요');
-  document.getElementById('modal-title').innerText = '🐯 대장실 · 세나 대장님';
+  document.getElementById('modal-title').innerText = '👑 CEO · 세나 대표님';
   document.getElementById('modal-body').innerHTML = `<div class="card" style="cursor:default;"><div class="t-title">현재 접수 큐 총 ${DATA.tickets.length}건 · 5개 부서실 가동 중</div><div class="t-meta">기준: ${DATA.updated}</div></div><h4 style="font-size:13px;margin:10px 0 8px;">🔴 대장님 결정 필요 (${dec.length}건)</h4>${dec.map(({t,i})=>ticketCardHtml(t,i)).join('')||'<p class="t-meta">없음</p>'}`;
   document.getElementById('modal-bg').classList.add('open');
 }
