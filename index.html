@@ -102,6 +102,33 @@
     border-radius: 10px; padding: 2px 7px; font-size: 9.5px; font-weight: 800;
     color: #5C3A21; box-shadow: 0 2px 8px rgba(0,0,0,.18);
     cursor: pointer; white-space: nowrap; z-index: 3;
+    animation: floatBob 3.2s ease-in-out infinite;
+  }
+  @keyframes floatBob {
+    0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+    50% { transform: translate(-50%, -50%) translateY(-3px); }
+  }
+  .walker {
+    position: absolute; transform: translate(-50%, -50%);
+    z-index: 5; pointer-events: auto; cursor: pointer;
+    transition: left 2.3s cubic-bezier(.45,.05,.55,.95), top 2.3s cubic-bezier(.45,.05,.55,.95);
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .walker-chip {
+    background: rgba(255,255,255,0.96); border: 1.5px solid var(--accent);
+    border-radius: 999px; padding: 2px 7px; font-size: 10px; font-weight: 800;
+    box-shadow: 0 3px 10px rgba(0,0,0,.16); white-space: nowrap;
+    animation: walkBounce 1.4s ease-in-out infinite;
+  }
+  .walker-say {
+    background: #1E293B; color: #fff; font-size: 9px; font-weight: 700;
+    padding: 2px 6px; border-radius: 8px; margin-bottom: 3px; white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0,0,0,.2); opacity: 0; transition: opacity .3s;
+  }
+  .walker-say.show { opacity: 1; }
+  @keyframes walkBounce {
+    0%, 100% { transform: translateY(0px) scale(1); }
+    50% { transform: translateY(-2.5px) scale(1.03); }
   }
   .head-bubble::after {
     content: ""; position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%);
@@ -235,6 +262,7 @@
       <button class="pin" style="left:73%;top:62%;" onclick="openMember('미유')"><span class="pulse"></span>🌿 SNS부 · 미유</button>
       <button class="pin" style="left:27%;top:92%;" onclick="openMember('아카네')"><span class="pulse"></span>🔑 숙박업부 · 아카네</button>
       <button class="pin" style="left:73%;top:92%;" onclick="openMember('아이미')"><span class="pulse"></span>📊 전략부 · 아이미</button>
+      <div id="live-walkers"></div>
     </div>
     <div style="padding:0 14px;">
       <div id="briefing-box" style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:12px 14px;margin-bottom:10px;"></div>
@@ -367,7 +395,7 @@ async function unlock(autoPw) {
     document.getElementById('lock-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     document.getElementById('hdr-sub').innerText = `부서별 5실 · ${DATA.updated}`;
-    renderBriefing(); renderMapQueue(); renderMapBubbles(); renderApproval(); renderQueue(); renderLounge(); renderOpinions(); renderMembers();
+    renderBriefing(); renderMapQueue(); renderMapBubbles(); renderApproval(); renderQueue(); renderLounge(); renderOpinions(); renderMembers(); startLiveOffice();
   } catch (e) {
     localStorage.removeItem('sena_office_pin');
     document.getElementById('err-msg').innerText = '비밀번호가 맞지 않아!';
@@ -485,6 +513,56 @@ function renderBriefing() {
       }).join('');
     }
   }
+}
+let liveTimer = null;
+function startLiveOffice() {
+  const layer = document.getElementById('live-walkers');
+  if (!layer) return;
+  const homes = {
+    '미향': { x: 16, y: 51, emoji: '💙', say: ['오늘도 화이팅!', '일 잘 돌아가나~', '대표님 보고 가야지'] },
+    '미유': { x: 84, y: 51, emoji: '🌿', say: ['블로그 초안 쓰는 중', 'GA4 체크!', '아아 한 잔~'] },
+    '아카네': { x: 16, y: 80, emoji: '🔑', say: ['체크인 확인!', '메일함 이상 무', '게스트 후기 5점~'] },
+    '아이미': { x: 84, y: 80, emoji: '📊', say: ['수익화 분석 중', '교차검증 완료!', 'SEO 체크~'] },
+  };
+  const spots = [
+    { name: '라운지', x: 72, y: 20, lines: ['☕ 라운지 휴식 중', '🍰 마카롱 꿀맛!', '💡 새 아이디어 떠올랐다!', '🌿 잠깐 쉬어가자~'] },
+    { name: '대표실', x: 36, y: 20, lines: ['👑 대표님 보고 중!', '✨ 잘 진행되고 있어요', '📋 확인 부탁드려요!'] },
+    { name: '미향방', x: 32, y: 50, lines: ['💬 미향아 잠깐만!', '🙌 오늘도 고생해!'] },
+    { name: '미유방', x: 67, y: 50, lines: ['🌿 미유야 글 잘 써져?', '📸 사진 예쁘다!'] },
+    { name: '아카네방', x: 32, y: 79, lines: ['🔑 아카네 예약 어때?', '📬 메일 확인 중?'] },
+    { name: '아이미방', x: 67, y: 79, lines: ['📊 아이미 숫자 어때?', '💡 전략 회의하자!'] },
+  ];
+  layer.innerHTML = Object.entries(homes).map(([n, h]) =>
+    `<div class="walker" id="wk-${n}" style="left:${h.x}%;top:${h.y}%;" onclick="openMember('${n}')">
+      <div class="walker-say" id="wks-${n}"></div>
+      <div class="walker-chip">${h.emoji} ${n}</div>
+    </div>`
+  ).join('');
+
+  if (liveTimer) clearInterval(liveTimer);
+  const names = Object.keys(homes);
+  const step = () => {
+    const who = names[Math.floor(Math.random() * names.length)];
+    const el = document.getElementById('wk-' + who);
+    const sayEl = document.getElementById('wks-' + who);
+    if (!el || !sayEl) return;
+    const goHome = Math.random() < 0.42;
+    if (goHome) {
+      const h = homes[who];
+      el.style.left = (h.x + (Math.random() * 4 - 2)) + '%';
+      el.style.top = (h.y + (Math.random() * 4 - 2)) + '%';
+      sayEl.innerText = h.say[Math.floor(Math.random() * h.say.length)];
+    } else {
+      const sp = spots[Math.floor(Math.random() * spots.length)];
+      el.style.left = (sp.x + (Math.random() * 5 - 2.5)) + '%';
+      el.style.top = (sp.y + (Math.random() * 4 - 2)) + '%';
+      sayEl.innerText = sp.lines[Math.floor(Math.random() * sp.lines.length)];
+    }
+    sayEl.classList.add('show');
+    setTimeout(() => { if (sayEl) sayEl.classList.remove('show'); }, 3200);
+  };
+  setTimeout(step, 900);
+  liveTimer = setInterval(step, 3400);
 }
 function renderMapBubbles() {
   const appCnt = DATA.tickets.filter(t => isNeedApproval(t)).length;
