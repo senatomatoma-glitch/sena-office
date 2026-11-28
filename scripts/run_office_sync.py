@@ -156,6 +156,19 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None)
             "text": r[3] if len(r) > 3 else "",
         })
 
+    airbnb_monthly = []
+    for o in reversed(opinions):
+        txt = "\n".join([o.get("topic") or "", o.get("conclusion") or "", o.get("mihyang") or "", o.get("miyu") or "", o.get("aimi") or ""])
+        if "[에어비앤비 월별 실적]" in txt or "월별 실적" in txt:
+            rows = []
+            for line in txt.splitlines():
+                m = re.match(r"^\s*(\d+월)\s*[:：]\s*(.+)$", line.strip())
+                if m:
+                    rows.append({"month": m.group(1), "detail": m.group(2).strip()})
+            if rows:
+                airbnb_monthly = rows[:3]
+                break
+
     return {
         "updated": datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),
         "tickets": tickets,
@@ -163,6 +176,7 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None)
         "done_recent": list(reversed(done_recent[-15:])),
         "ceo_briefings": list(reversed(ceo_briefings[-7:])),
         "lounge": lounge[-40:],
+        "airbnb_monthly": airbnb_monthly,
     }
 
 

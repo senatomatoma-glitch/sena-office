@@ -805,15 +805,19 @@ function renderMembers() {
     const opsAll = DATA.tickets.filter(t=>/숙소|청소|에어비앤비|운영/.test(t.area||''));
     const opsDone = (DATA.done_recent||[]).filter(t=>/숙소|청소|에어비앤비|운영/.test(t.area||''));
     const opsPct = (opsAll.length + opsDone.length) ? Math.round(opsDone.length * 100 / (opsAll.length + opsDone.length)) : 0;
+    const abMonthly = DATA.airbnb_monthly || [];
+    const abHtml = abMonthly.length
+      ? abMonthly.map(m => `<div style="background:#F0FDF9;border:1px solid var(--border);border-radius:10px;padding:7px 9px;margin-top:6px;font-size:11.5px;"><b>📅 ${esc(m.month)}</b> · ${esc(m.detail)}</div>`).join('')
+      : `<div style="background:#F8FAFC;border:1px dashed #CBD5E1;border-radius:10px;padding:8px 10px;margin-top:6px;font-size:11px;color:var(--muted);">당월·익월·익익월 확정매출·예상매출·예약률·공실률은 아카네가 시트(<code>[에어비앤비 월별 실적]</code>)에 올리면 5분마다 자동 반영돼요.</div>`;
     gb.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <strong style="font-size:13.5px;">📈 사업 목표 현황판</strong>
+      <strong style="font-size:13.5px;">📈 사업 목표 · 에어비앤비 월별 현황판</strong>
       <span style="font-size:11px;color:var(--muted);">실행 ${runCnt} · 최근완료 ${doneCnt}건</span>
     </div>
     <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🌿 블로그 월 수익 목표</span><b>¥0 / ¥100,000 (수익 집계 전)</b></div>
     <div class="goal-bar"><div class="goal-fill" style="width:0%;"></div></div>
-    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🔑 에어비앤비 12월 목표 (5개 호실)</span><b>집계 연동 전 (목표 ¥1,000,000)</b></div>
-    <div class="goal-bar"><div class="goal-fill" style="width:0%;"></div></div>
-    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🏢 숙소·운영 티켓 처리율 (최근)</span><b>${opsPct}% (${opsDone.length}/${opsAll.length+opsDone.length}건)</b></div>
+    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🔑 에어비앤비 12월 목표 (5개 호실)</span><b>목표 ¥1,000,000</b></div>
+    ${abHtml}
+    <div style="font-size:11.5px;display:flex;justify-content:space-between;margin-top:8px;"><span>🏢 숙소·운영 티켓 처리율 (최근)</span><b>${opsPct}% (${opsDone.length}/${opsAll.length+opsDone.length}건)</b></div>
     <div class="goal-bar" style="margin-bottom:2px;"><div class="goal-fill" style="width:${opsPct}%;"></div></div>`;
   }
   const mvp = getMvp();
