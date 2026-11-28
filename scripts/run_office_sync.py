@@ -270,12 +270,18 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None,
 
     ceo_briefings = []
     for o in opinions:
-        topic = (o.get("topic") or "")
-        if "CEO 브리핑" in topic or topic.startswith("[CEO 브리핑]"):
+        topic = (o.get("topic") or "").strip()
+        author = (o.get("author") or "").strip()
+        is_briefing_row = (
+            "CEO 브리핑" in topic
+            or topic.startswith("[CEO 브리핑]")
+            or (author == "아카네" and re.match(r"^\[[^\]]*브리핑[^\]]*\]", topic))
+        )
+        if is_briefing_row:
             ceo_briefings.append({
                 "date": o.get("date", ""),
-                "title": o.get("topic", ""),
-                "author": o.get("author", "") or "아카네",
+                "title": topic,
+                "author": author or "아카네",
                 "body": o.get("conclusion") or o.get("mihyang") or o.get("miyu") or o.get("aimi") or "",
             })
 
@@ -347,7 +353,7 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None,
         "opinions": list(reversed(opinions[-12:])),
         "done_recent": list(reversed(done_recent[-15:])),
         "done_total": len(done_recent),
-        "ceo_briefings": list(reversed(ceo_briefings[-7:])),
+        "ceo_briefings": list(reversed(ceo_briefings[-14:])),
         "lounge": lounge[-40:],
         "airbnb_monthly": airbnb_monthly,
         "mood_stress": mood_stress,

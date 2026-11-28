@@ -321,7 +321,7 @@
     <div class="banner" style="border-radius:14px;margin-bottom:12px;padding:12px 14px;">
       <div class="banner-tag">📰 일일 CEO 브리핑 · 완료 현황</div>
       <h2 style="font-size:15px;">세나 대표님 오늘의 브리핑</h2>
-      <p style="font-size:11px;">아카네의 05:10 CEO 브리핑과 오늘 완료·진행 현황을 모아 보여줘요.</p>
+      <p style="font-size:11px;">아카네 브리핑(05:10·08:00·13:00·15:00·19:00·21:00)과 오늘 완료·진행 현황을 모아 보여줘요.</p>
     </div>
     <div id="ceo-briefing-list"></div>
     <div class="subhead" style="margin-top:14px;"><h3>✅ 오늘 완료 · 현황 브리핑</h3></div>
@@ -675,9 +675,9 @@ function renderBriefing() {
 
   const ceoListEl = document.getElementById('ceo-briefing-list');
   if (ceoListEl) {
-    const ceos = (DATA.ceo_briefings || []).filter(c => (c.title || '').includes('CEO 브리핑'));
+    const ceos = (DATA.ceo_briefings || []);
     if (!ceos.length) {
-      ceoListEl.innerHTML = `<div class="t-card"><div class="t-title">☀️ 아카네 05:10 CEO 브리핑 대기 중</div><div class="t-meta" style="margin-top:6px;">아카네가 <code>AI 실행창구</code> 시트(의견 정리 탭, 제목에 <code>[CEO 브리핑]</code> 포함)에 매일 아침 브리핑을 올리면 5분마다 자동으로 여기 표시돼요!</div></div>`;
+      ceoListEl.innerHTML = `<div class="t-card"><div class="t-title">☀️ 아카네 브리핑 대기 중</div><div class="t-meta" style="margin-top:6px;">아카네가 <code>AI 실행창구</code> 시트(의견 정리 탭, 제목에 <code>[CEO 브리핑]</code> 또는 <code>[브리핑]</code> 포함)에 회차별 브리핑을 올리면 5분마다 자동으로 여기 표시돼요!</div></div>`;
     } else {
       ceoListEl.innerHTML = ceos.map((c, idx) => {
         if (idx === 0) return renderCeoPretty(c);
