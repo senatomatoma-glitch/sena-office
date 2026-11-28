@@ -111,43 +111,32 @@
   .walker {
     position: absolute; transform: translate(-50%, -95%);
     z-index: 5; pointer-events: auto; cursor: pointer;
-    width: 36px; height: 50px;
-    transition: left 2.0s linear, top 2.0s linear, opacity 0.25s ease;
+    height: 9.5%; aspect-ratio: 120 / 280;
+    transition: left 1.9s linear, top 1.9s linear, opacity 0.25s ease;
     display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
   }
-  .chibi-svg { width: 34px; height: 46px; overflow: visible; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.25)); }
-  .walker.flip .chibi-svg { transform: scaleX(-1); }
-  .walker .arm-l, .walker .arm-r, .walker .leg-l, .walker .leg-r, .walker .head-grp {
-    transform-box: fill-box; transition: transform 0.2s ease;
-  }
-  .walker .arm-l, .walker .arm-r { transform-origin: 50% 10%; }
-  .walker .leg-l, .walker .leg-r { transform-origin: 50% 0%; }
-  .walker .head-grp { transform-origin: 50% 85%; }
-  .walker .cup-prop { opacity: 0; transition: opacity 0.2s; }
-  /* Idle / sitting at desk */
-  .walker.sitting .leg-l, .walker.sitting .leg-r { transform: rotate(-55deg) translateY(-2px); }
-  .walker.sitting .arm-l { animation: typeArmL 0.45s ease-in-out infinite alternate; }
-  .walker.sitting .arm-r { animation: typeArmR 0.45s ease-in-out infinite alternate; }
-  .walker.sitting .head-grp { animation: idleNod 2.4s ease-in-out infinite; }
-  /* Walking cycle: real alternating arms & legs */
-  .walker.walking .chibi-svg { animation: bodyStride 0.44s ease-in-out infinite; }
-  .walker.walking .leg-l { animation: swingFwd 0.44s ease-in-out infinite alternate; }
-  .walker.walking .leg-r { animation: swingBwd 0.44s ease-in-out infinite alternate; }
-  .walker.walking .arm-l { animation: swingBwd 0.44s ease-in-out infinite alternate; }
-  .walker.walking .arm-r { animation: swingFwd 0.44s ease-in-out infinite alternate; }
-  /* Sipping coffee in lounge */
-  .walker.sipping .leg-l, .walker.sipping .leg-r { transform: rotate(-45deg) translateY(-2px); }
-  .walker.sipping .arm-r { animation: sipArm 1.4s ease-in-out infinite; }
-  .walker.sipping .head-grp { animation: sipHead 1.4s ease-in-out infinite; }
-  .walker.sipping .cup-prop { opacity: 1; }
-  @keyframes swingFwd { 0% { transform: rotate(-28deg); } 100% { transform: rotate(28deg); } }
-  @keyframes swingBwd { 0% { transform: rotate(28deg); } 100% { transform: rotate(-28deg); } }
-  @keyframes bodyStride { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-2.5px); } }
-  @keyframes typeArmL { 0% { transform: rotate(-18deg); } 100% { transform: rotate(-34deg); } }
-  @keyframes typeArmR { 0% { transform: rotate(-34deg); } 100% { transform: rotate(-18deg); } }
-  @keyframes idleNod { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(3deg); } }
-  @keyframes sipArm { 0%, 100% { transform: rotate(-25deg); } 50% { transform: rotate(-85deg); } }
-  @keyframes sipHead { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-6deg); } }
+  .rig { position: relative; width: 100%; height: 100%; filter: drop-shadow(0 3px 4px rgba(0,0,0,0.28)); }
+  .walker.flip .rig { transform: scaleX(-1); }
+  .part-body { position: absolute; left: 0; top: 0; width: 100%; height: 64%; object-fit: contain; z-index: 3; transform-origin: 50% 85%; }
+  .part-legl { position: absolute; left: 0; top: 56%; width: 52%; height: 44%; object-fit: contain; z-index: 1; transform-origin: 65% 8%; transition: transform 0.22s ease; }
+  .part-legr { position: absolute; right: 0; top: 56%; width: 52%; height: 44%; object-fit: contain; z-index: 2; transform-origin: 35% 8%; transition: transform 0.22s ease; }
+  .walker-cup { position: absolute; right: -8px; top: 44%; font-size: 12px; display: none; z-index: 4; filter: drop-shadow(0 2px 3px rgba(0,0,0,.2)); }
+  .walker.sipping .walker-cup { display: block; animation: sipCup 1.3s ease-in-out infinite; }
+  .walker.sitting .part-legl { transform: rotate(-35deg) translateY(-3px); }
+  .walker.sitting .part-legr { transform: rotate(-28deg) translateY(-3px); }
+  .walker.sitting .part-body { animation: idleNod 2.5s ease-in-out infinite; }
+  .walker.walking .rig { animation: bodyStride 0.44s ease-in-out infinite; }
+  .walker.walking.flip .rig { animation: bodyStrideFlip 0.44s ease-in-out infinite; }
+  .walker.walking .part-legl { animation: swingFwd 0.44s ease-in-out infinite alternate; }
+  .walker.walking .part-legr { animation: swingBwd 0.44s ease-in-out infinite alternate; }
+  .walker.sipping .part-body { animation: sipHead 1.3s ease-in-out infinite; }
+  @keyframes swingFwd { 0% { transform: rotate(-26deg); } 100% { transform: rotate(26deg); } }
+  @keyframes swingBwd { 0% { transform: rotate(26deg); } 100% { transform: rotate(-26deg); } }
+  @keyframes bodyStride { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-2px); } }
+  @keyframes bodyStrideFlip { 0%, 100% { transform: scaleX(-1) translateY(0px); } 50% { transform: scaleX(-1) translateY(-2px); } }
+  @keyframes idleNod { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(2deg); } }
+  @keyframes sipHead { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-5deg); } }
+  @keyframes sipCup { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-4px) rotate(-10deg); } }
   .sky-fx { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; border-radius: 20px; }
   .rain-drop { position: absolute; width: 1.5px; height: 14px; background: linear-gradient(transparent, rgba(125,211,252,0.75)); animation: rainFall 0.9s linear infinite; }
   @keyframes rainFall { 0% { transform: translateY(-20px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(420px); opacity: 0; } }
@@ -568,42 +557,13 @@ function openConf() {
 }
 let liveTimer = null;
 function chibiSvg(n) {
-  const cfg = {
-    '세나': { hair:'#1F2937', top:'#86EFAC', pants:'#1E293B', crown:true, glasses:true, hairBack:'none', pin:'' },
-    '미향': { hair:'#64748B', top:'#60A5FA', pants:'#F8FAFC', hairBack:'wave', pin:'<circle cx="24" cy="12" r="2" fill="#F97316"/>', glasses:false },
-    '미유': { hair:'#F472B6', top:'#6EE7B7', pants:'#E7E5E4', hairBack:'wave', pin:'<rect x="22" y="10" width="5" height="3" rx="1" fill="#34D399"/>', glasses:false },
-    '아카네': { hair:'#78350F', top:'#334155', pants:'#2563EB', hairBack:'bob', pin:'<circle cx="25" cy="14" r="1.8" fill="#EF4444"/>', scarf:'#FEF3C7', glasses:false },
-    '아이미': { hair:'#8B5CF6', top:'#7C3AED', pants:'#1E293B', hairBack:'pony', pin:'<rect x="23" y="11" width="4" height="1.5" fill="#E2E8F0"/>', glasses:true },
-  }[n];
-  const backHair = cfg.hairBack === 'wave' ? `<path d="M9 14 Q6 24 9 32 L27 32 Q30 24 27 14 Z" fill="${cfg.hair}"/>` :
-                   cfg.hairBack === 'bob'  ? `<path d="M9 13 Q7 22 10 26 L26 26 Q29 22 27 13 Z" fill="${cfg.hair}"/>` :
-                   cfg.hairBack === 'pony' ? `<path d="M6 12 Q2 18 5 26 Q9 22 10 14 Z" fill="${cfg.hair}"/>` : '';
-  const crown = cfg.crown ? `<polygon points="10,7 12,1 16,5 18,0 20,5 24,1 26,7" fill="#FBBF24" stroke="#B45309" stroke-width="0.8"/>` : '';
-  const glasses = cfg.glasses ? `<circle cx="15" cy="17" r="3" fill="none" stroke="#94A3B8" stroke-width="1"/><circle cx="22" cy="17" r="3" fill="none" stroke="#94A3B8" stroke-width="1"/><line x1="18" y1="17" x2="19" y2="17" stroke="#94A3B8" stroke-width="1"/>` : '';
-  const scarf = cfg.scarf ? `<rect x="13" y="23" width="10" height="3.5" rx="1.5" fill="${cfg.scarf}"/>` : '';
-  return `<svg class="chibi-svg" viewBox="0 0 36 48">
-    <ellipse cx="18" cy="45" rx="8" ry="2.2" fill="rgba(0,0,0,0.18)"/>
-    <g class="leg-l"><rect x="13" y="34" width="4" height="10" rx="2" fill="${cfg.pants}"/><rect x="12.5" y="42" width="5" height="3" rx="1.5" fill="#F8FAFC"/></g>
-    <g class="leg-r"><rect x="19" y="34" width="4" height="10" rx="2" fill="${cfg.pants}"/><rect x="18.5" y="42" width="5" height="3" rx="1.5" fill="#F8FAFC"/></g>
-    <g class="arm-l"><rect x="9" y="25" width="3.5" height="9" rx="1.7" fill="${cfg.top}"/><circle cx="10.7" cy="34.5" r="1.8" fill="#FDE68A"/></g>
-    <rect x="12.5" y="24" width="11" height="11.5" rx="3.5" fill="${cfg.top}"/>
-    ${scarf}
-    <g class="arm-r">
-      <rect x="23.5" y="25" width="3.5" height="9" rx="1.7" fill="${cfg.top}"/>
-      <circle cx="25.2" cy="34.5" r="1.8" fill="#FDE68A"/>
-      <g class="cup-prop"><rect x="24" y="31" width="4" height="4.5" rx="1" fill="#78350F"/><rect x="24" y="30.5" width="4" height="1" fill="#FFF"/></g>
-    </g>
-    <g class="head-grp">
-      ${backHair}
-      <circle cx="18" cy="16" r="8.5" fill="#FDE68A"/>
-      <path d="M9.5 15 Q11 6 18 7 Q25 6 26.5 15 Q22 10 18 11 Q14 10 9.5 15 Z" fill="${cfg.hair}"/>
-      ${crown}${cfg.pin}
-      <circle cx="15" cy="17" r="1.3" fill="#1E293B"/><circle cx="22" cy="17" r="1.3" fill="#1E293B"/>
-      <circle cx="13" cy="19.5" r="1.3" fill="#FDA4AF" opacity="0.6"/><circle cx="24" cy="19.5" r="1.3" fill="#FDA4AF" opacity="0.6"/>
-      <path d="M16.5 20.5 Q18.5 22 20.5 20.5" fill="none" stroke="#B45309" stroke-width="1" stroke-linecap="round"/>
-      ${glasses}
-    </g>
-  </svg>`;
+  const key = {'세나':'sena','미향':'mihyang','미유':'miyu','아카네':'akane','아이미':'aimi'}[n];
+  return `<div class="rig">
+    <img class="part-legl" src="sprites/parts/${key}_legl.png?v=1" alt="">
+    <img class="part-legr" src="sprites/parts/${key}_legr.png?v=1" alt="">
+    <img class="part-body" src="sprites/parts/${key}_body.png?v=1" alt="${n}">
+    <div class="walker-cup">☕</div>
+  </div>`;
 }
 function startLiveOffice() {
   const layer = document.getElementById('live-walkers');
