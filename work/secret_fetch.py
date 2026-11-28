@@ -467,9 +467,6 @@ def refresh_monthly_top5(prev=None, sleep_s=1.2, log=print):
                 entry = old.get('entry')
                 if not isinstance(entry, dict) or not entry.get('key'):
                     entry = build_new_monthly_entry(sid, row['name'], area_name, cache, notes, log)
-                    if entry and entry.get('key') in by_key:
-                        entry.pop('key')
-                        entry = None
                     if entry:
                         cache.setdefault('shops', []).append(entry)
                         by_key[entry['key']] = entry
