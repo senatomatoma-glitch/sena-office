@@ -417,6 +417,7 @@
     <div id="clean-foot" class="t-meta" style="text-align:center;margin:10px 0 4px;"></div>
   </div>
 </div>
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this) closeModal()">
   <div class="modal">
     <div class="modal-top"><h3 id="modal-title" style="font-size:16px;"></h3><button class="close-btn" onclick="closeModal()">✕</button></div>
     <div id="modal-body"></div>
@@ -485,6 +486,8 @@ function statusBadge(s) {
   return `<span class="badge b-hold">${esc(s)}</span>`;
 }
 function showTab(name, btn) {
+  const bg = document.getElementById('modal-bg');
+  if (bg && bg.classList.contains('open')) bg.classList.remove('open');
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
@@ -1184,7 +1187,7 @@ function openBoss() {
   document.getElementById('modal-body').innerHTML = `<div class="card" style="cursor:default;"><div class="t-title">현재 접수 큐 총 ${DATA.tickets.length}건 · 5개 부서실 가동 중</div><div class="t-meta">기준: ${DATA.updated}</div></div><h4 style="font-size:13px;margin:10px 0 8px;">🔴 대장님 결정 필요 (${dec.length}건)</h4>${dec.map(({t,i})=>ticketCardHtml(t,i)).join('')||'<p class="t-meta">없음</p>'}`;
   document.getElementById('modal-bg').classList.add('open');
 }
-function closeModal() { document.getElementById('modal-bg').classList.remove('open'); }
+function closeModal() { const bg = document.getElementById('modal-bg'); if (bg) bg.classList.remove('open'); }
 
 let SEC_DATA = null, curSecFilter = '전체';
 async function unlockSecret() {
