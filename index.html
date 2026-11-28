@@ -391,9 +391,18 @@
       <div class="subhead"><h3 id="sec-title">🤫 비밀놀이</h3><button class="lock-mini" onclick="lockSecret()">🔒 잠금</button></div>
       <input class="search-input" id="s-search" type="text" placeholder="🔍 이름, 가게, 지역, 컵 검색..." oninput="renderSecret()">
       <div class="filter-row" id="sec-filters">
-        <button class="f-btn active" onclick="setSecFilter('전체', this)">전체</button>
+        <button class="f-btn active" onclick="setSecFilter('전체', this)">전체(9종)</button>
         <button class="f-btn" onclick="setSecFilter('🟢', this)">🟢 지금가능</button>
         <button class="f-btn" onclick="setSecFilter('🟡', this)">🟡 오늘예정</button>
+        <button class="f-btn" onclick="setSecFilter('card1', this)">1.통합가능</button>
+        <button class="f-btn" onclick="setSecFilter('card2', this)">2.가게1위</button>
+        <button class="f-btn" onclick="setSecFilter('card3', this)">3.신입</button>
+        <button class="f-btn" onclick="setSecFilter('card4', this)">4.최대컵</button>
+        <button class="f-btn" onclick="setSecFilter('card5', this)">5.최연소</button>
+        <button class="f-btn" onclick="setSecFilter('card6', this)">6.연상</button>
+        <button class="f-btn" onclick="setSecFilter('card7', this)">7.H컵155↓</button>
+        <button class="f-btn" onclick="setSecFilter('card8', this)">8.전체인원</button>
+        <button class="f-btn" onclick="setSecFilter('card9', this)">9.프리</button>
       </div>
       <div id="secret-list"></div>
     </div>
@@ -1124,15 +1133,8 @@ function setSecFilter(f, btn) {
   btn.classList.add('active');
   renderSecret();
 }
-function renderSecret() {
-  if (!SEC_DATA) return;
-  const kw = (document.getElementById('s-search')?.value || '').trim().toLowerCase();
-  const list = SEC_DATA.items.filter(x => {
-    if (curSecFilter !== '전체' && x.status !== curSecFilter) return false;
-    if (kw && !`${x.name} ${x.shop} ${x.area} ${x.cup} ${x.tag}`.toLowerCase().includes(kw)) return false;
-    return true;
-  });
-  document.getElementById('secret-list').innerHTML = list.map(x => `
+function renderSecCardHtml(x) {
+  return `
     <div class="s-card">
       ${x.img ? `<img class="s-img" src="${esc(x.img)}" referrerpolicy="no-referrer" loading="lazy" alt="">` : `<div class="s-img"></div>`}
       <div class="s-body">
@@ -1140,16 +1142,40 @@ function renderSecret() {
           <strong>${esc(x.status)} ${esc(x.name)}</strong>
           ${x.tag ? `<span class="badge b-ver">${esc(x.tag)}</span>` : ''}
         </div>
-        <div class="t-meta" style="margin-top:0;">${x.age ? x.age+'세 · ' : ''}${x.cup ? x.cup+'컵 · ' : ''}${x.height ? x.height+'cm' : ''}</div>
-        <div class="t-title" style="font-size:12.5px;margin-top:3px;">${esc(x.shop)} (${esc(x.area)})</div>
+        ${x.is_shop ? '' : `<div class="t-meta" style="margin-top:0;">${x.age ? x.age+'세 · ' : ''}${x.cup ? x.cup+'컵 · ' : ''}${x.height ? x.height+'cm' : ''}</div>`}
+        <div class="t-title" style="font-size:12.5px;margin-top:3px;">${esc(x.shop)}${x.area ? ' ('+esc(x.area)+')' : ''}</div>
         <div class="t-meta">${esc(x.today)} ${x.price ? '· '+esc(x.price) : ''}</div>
         <div class="s-actions">
           ${x.phone ? `<a class="s-btn call" href="tel:${esc(x.phone)}">📞 ${esc(x.phone)}</a>` : ''}
-          ${x.url ? `<a class="s-btn" href="${esc(x.url)}" target="_blank">🔗 프로필</a>` : ''}
+          ${x.url ? `<a class="s-btn" href="${esc(x.url)}" target="_blank">🔗 ${x.is_shop ? '공식홈' : '프로필'}</a>` : ''}
         </div>
       </div>
     </div>
-  `).join('') || '<p class="t-meta" style="text-align:center;padding:24px;">조건에 맞는 후보가 없어.</p>';
+  `;
+}
+function renderSecret() {
+  if (!SEC_DATA) return;
+  const kw = (document.getElementById('s-search')?.value || '').trim().toLowerCase();
+  const cards = SEC_DATA.cards || [];
+  const matchKw = x => !kw || `${x.name} ${x.shop} ${x.area} ${x.cup} ${x.tag}`.toLowerCase().includes(kw);
+
+  if (cards.length && (curSecFilter === '전체' || curSecFilter.startsWith('card'))) {
+    const targetCards = curSecFilter === '전체' ? cards : cards.filter(c => c.id === curSecFilter);
+    const html = targetCards.map(c => {
+      const list = (c.items || []).filter(matchKw);
+      if (!list.length && kw) return '';
+      return `<div class="subhead" style="margin-top:14px;"><h3>${esc(c.title)} (${list.length})</h3></div>` +
+        (list.map(renderSecCardHtml).join('') || '<p class="t-meta" style="padding:8px 0;">해당 인원이 없어.</p>');
+    }).filter(Boolean).join('');
+    document.getElementById('secret-list').innerHTML = html || '<p class="t-meta" style="text-align:center;padding:24px;">조건에 맞는 후보가 없어.</p>';
+    return;
+  }
+
+  const list = (SEC_DATA.items || []).filter(x => {
+    if (curSecFilter !== '전체' && x.status !== curSecFilter) return false;
+    return matchKw(x);
+  });
+  document.getElementById('secret-list').innerHTML = list.map(renderSecCardHtml).join('') || '<p class="t-meta" style="text-align:center;padding:24px;">조건에 맞는 후보가 없어.</p>';
 }
 const saved = localStorage.getItem('sena_office_pin');
 if (saved) unlock(saved);

@@ -10,6 +10,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "work"))
 import secret_build_cards as sbc
 
+
 def main():
     fetch_script = os.path.join(ROOT, "work", "secret_fetch.py")
     live_path = os.path.join(ROOT, "work", "secret_live.json")
@@ -22,37 +23,22 @@ def main():
 
     sbc.SHOPS_LIVE = live.get("shops") or {}
     shops = sbc.SHOPS_LIVE
-    shop_status = live.get("shop_status") or {}
     b = sbc.build(live, cache, now)
 
-    def review_ok(shop_name):
-        st = shop_status.get(shop_name) or {}
-        if "has_review" in st and not st["has_review"]:
-            return False
-        return True
-
-    # Collect core picks + all 🟢/🟡 E+ people
-    seen = set()
-    items = []
-
-    def add_person(p, tag=""):
-        if not review_ok(p.get("shop") or ""):
-            return
-        key = (p.get("shop") or "", sbc.norm_name(p.get("name") or ""))
-        if key in seen:
-            return
-        seen.add(key)
-        st = sbc.status_of(p, now)
-        sh = shops.get(p.get("shop") or "", {})
+    def person_obj(p, roles=None):
+        sh_name = p.get("shop") or ""
+        sh = shops.get(sh_name, {})
         img = p.get("img_url") or p.get("img") or ""
         if img.startswith("downloads/"):
             img = ""
-        items.append({
+        st = p.get("status") or sbc.status_of(p, now)
+        tag = ", ".join(sorted(roles)) if roles else ("신입" if p.get("new") else "")
+        return {
             "name": p.get("name") or "",
             "age": p.get("age"),
             "cup": p.get("cup") or "",
             "height": p.get("height"),
-            "shop": p.get("shop") or "",
+            "shop": sh_name,
             "area": sh.get("area") or "",
             "status": st,
             "today": sbc.today_text(p) or "",
@@ -62,26 +48,47 @@ def main():
             "img": img,
             "new": bool(p.get("new")),
             "tag": tag,
-        })
+        }
 
-    # 1. Core picks from build()
-    for p, roles in (b.get("core_picks") or []):
-        add_person(p, ", ".join(roles))
+    def shop_obj(s):
+        pf = s.get("price_free")
+        fc = s.get("free_course") or "120분"
+        return {
+            "is_shop": True,
+            "name": s.get("name") or s.get("shop") or "",
+            "shop": s.get("name") or s.get("shop") or "",
+            "area": s.get("area") or "",
+            "status": "🆓",
+            "today": s.get("hours") or "",
+            "price": f"{fc} ¥{pf:,}" if pf else "",
+            "phone": s.get("phone") or "",
+            "url": s.get("official_url") or s.get("url") or "",
+            "img": s.get("logo_url") or "",
+            "tag": sbc.home_badge(s.get("name") or "", s) or "",
+        }
 
-    # 2. All active 🟢 / 🟡 people with E+ cup (or any 🟢)
-    pool = [p for p in (live.get("people") or []) if sbc.status_of(p, now) in ("🟢", "🟡") and sbc.cup_rank(p) >= 5]
-    pool.sort(key=lambda p: (0 if sbc.status_of(p, now) == "🟢" else 1, -sbc.cup_rank(p), p.get("age") or 99))
-    for p in pool[:140]:
-        add_person(p, "추천" if p.get("new") else "")
+    cards = [
+        {"id": "card1", "title": "🟢 지금 가능 · 오늘 예정", "items": [person_obj(p, roles) for p, roles in (b.get("card1") or [])]},
+        {"id": "card2", "title": "🏪 가게별 랭킹 1위", "items": [person_obj(p) for p in (b.get("reps2") or [])] + [shop_obj(s) for s in (b.get("shop_level") or [])]},
+        {"id": "card3", "title": "🌱 신입·체입 최대 컵 TOP 6", "items": [person_obj(p) for p in (b.get("card3") or [])]},
+        {"id": "card4", "title": "💎 최대 컵 TOP 6", "items": [person_obj(p) for p in (b.get("card4") or [])]},
+        {"id": "card5", "title": "🌸 최연소·최대 컵 TOP 6", "items": [person_obj(p) for p in (b.get("card5") or [])]},
+        {"id": "card6", "title": "✨ 최대 컵·연상 우선 TOP 6", "items": [person_obj(p) for p in (b.get("card6") or [])]},
+        {"id": "card7", "title": "🔥 H컵 이상 · 155cm 이하 TOP 6", "items": [person_obj(p) for p in (b.get("card7") or [])]},
+        {"id": "card8", "title": "📋 전체 인원 리스트", "items": [person_obj(v["p"], v.get("roles")) for v in (b.get("card8") or [])]},
+        {"id": "card9", "title": "🆓 가게별 프리 (120분 가격순)", "items": [shop_obj(s) for s in (b.get("shops_sorted") or [])]},
+    ]
 
+    all_items = cards[7]["items"]  # card8 is full union
     payload = json.dumps({
         "updated": now.strftime("%Y-%m-%d %H:%M JST"),
         "counts": {
-            "green": sum(1 for x in items if x["status"] == "🟢"),
-            "yellow": sum(1 for x in items if x["status"] == "🟡"),
-            "total": len(items),
+            "green": sum(1 for x in all_items if x["status"] == "🟢"),
+            "yellow": sum(1 for x in all_items if x["status"] == "🟡"),
+            "total": len(all_items),
         },
-        "items": items,
+        "cards": cards,
+        "items": all_items,
     }, ensure_ascii=False).encode("utf-8")
 
     salt = os.urandom(16)
@@ -96,7 +103,8 @@ def main():
             "i": base64.b64encode(iv).decode("ascii"),
             "c": base64.b64encode(ct).decode("ascii"),
         }, f)
-    print(f"Wrote secret_enc.json: {len(items)} items (green={sum(1 for x in items if x['status']=='🟢')})")
+    print(f"Wrote secret_enc.json: 9 cards, {len(all_items)} total people")
+
 
 if __name__ == "__main__":
     main()
