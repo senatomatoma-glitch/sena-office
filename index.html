@@ -335,6 +335,7 @@
       <div class="filter-row" id="status-filters">
         <button class="f-btn active" onclick="setQStatus('전체', this)">전체</button>
         <button class="f-btn" onclick="setQStatus('결정 필요', this)">🔴 결정필요</button>
+        <button class="f-btn" onclick="setQStatus('접수', this)">🟢 접수</button>
         <button class="f-btn" onclick="setQStatus('실행 중', this)">🔵 실행중</button>
         <button class="f-btn" onclick="setQStatus('검증 중', this)">🟠 검증중</button>
         <button class="f-btn" onclick="setQStatus('보류', this)">⚪ 보류</button>
@@ -473,11 +474,13 @@ function renderMapQueue() {
   const counts = {
     '전체': DATA.tickets.length,
     '결정 필요': DATA.tickets.filter(t => t.status === '결정 필요').length,
+    '접수': DATA.tickets.filter(t => t.status === '접수').length,
     '실행 중': DATA.tickets.filter(t => t.status === '실행 중').length,
     '검증 중': DATA.tickets.filter(t => t.status === '검증 중').length,
-    '보류': DATA.tickets.filter(t => t.status === '보류' || t.status === '접수').length,
+    '보류': DATA.tickets.filter(t => t.status === '보류').length,
   };
   document.getElementById('map-q-count').innerText = `총 ${DATA.tickets.length}건 (누르면 상세)`;
+  document.getElementById('map-stat-strip').style.gridTemplateColumns = 'repeat(3, 1fr)';
   document.getElementById('map-stat-strip').innerHTML = Object.entries(counts).map(([k,v]) =>
     `<div class="stat-box ${curMapStatus===k?'active':''}" onclick="curMapStatus='${k}';renderMapQueue();"><div class="stat-num">${v}</div><div class="stat-lbl">${k}</div></div>`
   ).join('');
@@ -503,7 +506,7 @@ function renderMapQueue() {
   const mDash = document.getElementById('map-member-dash');
   if (mDash) mDash.innerHTML = mCards;
   const list = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=> {
-    const okS = curMapStatus==='전체' ? true : (curMapStatus==='보류' ? (t.status==='보류'||t.status==='접수') : t.status===curMapStatus);
+    const okS = curMapStatus==='전체' ? true : (t.status===curMapStatus);
     const okO = curMapOwner==='전체' ? true : ((t.owner===curMapOwner && t.status!=='검증 중') || (t.verifier===curMapOwner && t.status==='검증 중'));
     return okS && okO;
   });
