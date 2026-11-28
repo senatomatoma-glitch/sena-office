@@ -200,6 +200,20 @@
   .b-hold { background: #F3F4F6; color: #4B5563; }
   .b-done { background: var(--green-bg); color: var(--green); }
   .filter-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 6px; }
+  /* 🤫 비밀 탭: 기본(전체)은 6열 2행으로 한눈에, 세부 필터 선택 시 한 줄 가로 스크롤 */
+  #sec-filters.sec-grid {
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px; overflow-x: visible; padding-bottom: 4px;
+  }
+  #sec-filters.sec-grid .f-btn {
+    padding: 5px 2px; font-size: 10.5px; border-radius: 10px; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.3px;
+  }
+  #sec-filters.sec-line {
+    display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto;
+    padding-bottom: 8px; -webkit-overflow-scrolling: touch;
+  }
+  #sec-filters.sec-line .f-btn { flex: 0 0 auto; padding: 5px 11px; font-size: 12px; }
   .f-btn {
     border: 1px solid var(--border); background: var(--card); padding: 5px 11px;
     border-radius: 14px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
@@ -373,6 +387,21 @@
       <h2 style="font-size:15px;">MINT Office 라운지</h2>
       <p style="font-size:11px;">세나 · 미향 · 미유 · 아카네 · 아이미가 자유롭게 잡담하고 아이디어를 던지는 공간이에요.<br>지금 사무실에서 라운지에 들어온 멤버의 실시간 한마디(<b>☕ 라운지 톡</b>)와 시트에 남긴 기록이 시간순으로 같이 올라와요.</p>
     </div>
+    <div id="lounge-write" style="background:linear-gradient(135deg,#FFFCF2,#FFF7E6);border:1px solid #FCD34D;border-radius:14px;padding:11px 12px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <span style="font-size:12px;font-weight:800;color:#92400E;">👑 세나로 라운지에 한마디</span>
+        <span id="lounge-send-state" style="margin-left:auto;font-size:10.5px;font-weight:700;color:#A16207;"></span>
+      </div>
+      <div id="lounge-tag-row" style="display:flex;gap:5px;margin-bottom:8px;">
+        <button class="f-btn active" data-tag="잡담" onclick="setLoungeTag('잡담', this)" style="padding:4px 10px;font-size:11px;">잡담</button>
+        <button class="f-btn" data-tag="아이디어" onclick="setLoungeTag('아이디어', this)" style="padding:4px 10px;font-size:11px;">💡 아이디어</button>
+        <button class="f-btn" data-tag="응원" onclick="setLoungeTag('응원', this)" style="padding:4px 10px;font-size:11px;">📣 응원</button>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <input id="lounge-input" type="text" enterkeyhint="send" autocomplete="off" placeholder="다들 수고했어! 하고 한마디 남겨봐 (Enter로 전송)" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();sendLoungeMsg();}" style="flex:1;min-width:0;padding:9px 11px;border-radius:11px;border:1px solid #E9D8A6;background:#fff;font-size:12.5px;font-family:inherit;outline:none;">
+        <button class="f-btn active" id="lounge-send-btn" onclick="sendLoungeMsg()" style="padding:9px 13px;font-size:12px;">보내기</button>
+      </div>
+    </div>
     <div id="lounge-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
   </div>
   <div id="tab-status" class="section">
@@ -390,7 +419,7 @@
     <div id="secret-view" style="display:none;">
       <div class="subhead"><h3 id="sec-title">🤫 비밀놀이</h3><button class="lock-mini" onclick="lockSecret()">🔒 잠금</button></div>
       <input class="search-input" id="s-search" type="text" placeholder="🔍 이름, 가게, 지역, 컵 검색..." oninput="renderSecret()">
-      <div class="filter-row" id="sec-filters">
+      <div class="filter-row sec-grid" id="sec-filters">
         <button class="f-btn active" onclick="setSecFilter('전체', this)">전체(9종)</button>
         <button class="f-btn" onclick="setSecFilter('🟢', this)">🟢 지금가능</button>
         <button class="f-btn" onclick="setSecFilter('🟡', this)">🟡 오늘예정</button>
@@ -972,12 +1001,95 @@ function addLiveLounge(who, minGapMs, customText) {
   renderLounge();
   return true;
 }
+const LOUNGE_TAGS = ['잡담', '아이디어', '응원'];
+let curLoungeTag = '잡담';
+function setLoungeTag(tag, btn) {
+  curLoungeTag = tag;
+  document.querySelectorAll('#lounge-tag-row .f-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+function loungeNowStr() {
+  try {
+    return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).slice(0, 16);
+  } catch (e) {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+}
+function loadLoungePending() {
+  try { const a = JSON.parse(localStorage.getItem('sena_lounge_pending') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+}
+function saveLoungePending(arr) {
+  try { localStorage.setItem('sena_lounge_pending', JSON.stringify((arr || []).slice(-40))); } catch (e) {}
+}
+/* 시트(DATA.lounge)에 같은 글이 이미 내려왔으면 대기 목록에서 정리해 중복 표시를 막는다 */
+function pruneLoungePending() {
+  const pend = loadLoungePending();
+  if (!pend.length) return;
+  const pool = ((DATA && DATA.lounge) || []).filter(m => m && m.name === '세나').map(m => String(m.text || '').trim());
+  if (!pool.length) return;
+  const kept = pend.filter(p => {
+    const t = String(p.text || '').trim();
+    const i = pool.indexOf(t);
+    if (i < 0) return true;
+    pool.splice(i, 1);
+    return false;
+  });
+  if (kept.length !== pend.length) saveLoungePending(kept);
+}
+async function sendLoungeMsg() {
+  const input = document.getElementById('lounge-input');
+  if (!input) return;
+  const text = (input.value || '').trim();
+  if (!text) return;
+  const tag = curLoungeTag || '잡담';
+  const time = loungeNowStr();
+  const msg = { time: time, name: '세나', tag: tag, text: text, live: false, ts: Date.now() };
+  window._liveLounge = window._liveLounge || [];
+  window._liveLounge.push(msg);
+  if (window._liveLounge.length > 40) window._liveLounge = window._liveLounge.slice(-40);
+  const pend = loadLoungePending();
+  pend.push(msg);
+  saveLoungePending(pend);
+  input.value = '';
+  renderLounge();
+  const st = document.getElementById('lounge-send-state');
+  const btn = document.getElementById('lounge-send-btn');
+  if (st) { st.style.color = '#A16207'; st.innerText = '시트에 저장하는 중…'; }
+  if (btn) btn.disabled = true;
+  const url = localStorage.getItem('sena_webhook_url') || DEFAULT_WEBHOOK_URL;
+  try {
+    await fetch(url, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ pin: localStorage.getItem('sena_office_pin') || '1228', kind: 'lounge', name: '세나', tag: tag, text: text, time: time })
+    });
+    if (st) { st.style.color = '#15803D'; st.innerText = '✓ 시트에 저장 요청 보냄'; }
+  } catch (e) {
+    if (st) { st.style.color = '#B91C1C'; st.innerText = '저장 요청 실패 · 화면에는 남아 있어'; }
+  } finally {
+    if (btn) btn.disabled = false;
+    try { input.focus(); } catch (e) {}
+    setTimeout(() => { if (st) st.innerText = ''; }, 5000);
+  }
+}
 function renderLounge() {
   const el = document.getElementById('lounge-list');
   if (!el) return;
+  pruneLoungePending();
   const sheetMsgs = ((DATA && DATA.lounge) || []).map((m, i) => ({ m: m, i: i, ts: loungeParseTs(m.time) }));
+  const pendMsgs = loadLoungePending().map((m, i) => ({ m: m, i: i + 200000, ts: (m.ts != null ? m.ts : loungeParseTs(m.time)) }));
   const liveMsgs = (window._liveLounge || []).map((m, i) => ({ m: m, i: i + 100000, ts: (m.ts != null ? m.ts : loungeParseTs(m.time)) }));
-  const msgs = [...sheetMsgs, ...liveMsgs].sort((a, b) => (b.ts - a.ts) || (b.i - a.i)).map(x => x.m);
+  const seen = {};
+  const msgs = [...sheetMsgs, ...pendMsgs, ...liveMsgs]
+    .sort((a, b) => (b.ts - a.ts) || (b.i - a.i))
+    .map(x => x.m)
+    .filter(m => {
+      const k = `${m.name || ''}|${String(m.text || '').trim()}|${String(m.time || '').slice(0, 16)}`;
+      if (seen[k]) return false;
+      seen[k] = 1;
+      return true;
+    });
   if (!msgs.length) {
     el.innerHTML = '<div class="card"><div class="t-meta">아직 올라온 잡담이 없어!</div></div>';
     return;
@@ -1264,9 +1376,19 @@ function lockSecret() {
 }
 function setSecFilter(f, btn) {
   curSecFilter = f;
+  const row = document.getElementById('sec-filters');
   document.querySelectorAll('#sec-filters .f-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  const isAll = (f === '전체');
+  if (row) {
+    row.classList.toggle('sec-grid', isAll);
+    row.classList.toggle('sec-line', !isAll);
+    if (isAll) row.scrollLeft = 0;
+  }
   renderSecret();
+  if (!isAll && btn && typeof btn.scrollIntoView === 'function') {
+    setTimeout(() => { try { btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (e) { btn.scrollIntoView(); } }, 30);
+  }
 }
 function renderSecCardHtml(x) {
   return `
