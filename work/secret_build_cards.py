@@ -21,7 +21,8 @@ WDAY = ['월', '화', '수', '목', '금', '토', '일']
 
 ROLE_ORDER = ['등록 리스트', '가게 순위', '신입 대표', '최대 컵', '최연소', '연상 대표', 'H컵 대표']
 ROLE_LABEL_FN = {
-    '가게 순위': lambda p, shop: (shop.get('rank_label') or '본지명 랭킹') + ('' if str(shop.get('rank_label') or '').endswith(('위', '1위')) else ' 1위'),
+    '가게 순위': lambda p, shop: (('공식 랭킹' if p.get('rank_src') == 'official' else (shop.get('rank_label') or '포털 랭킹'))
+                                   + (f" {p['rank_no']}위" if p.get('rank_no') else ' 랭킹')),
     '신입 대표': lambda p, shop: f"{p['shop']} 신입·체입 최대 컵 대표",
     '최대 컵': lambda p, shop: f"{p['shop']} 최대 컵 대표",
     '최연소': lambda p, shop: f"{p['shop']} 최연소·최대 컵 대표",
@@ -388,21 +389,19 @@ def build(live, cache, now):
         cands = [p for p in any_photo if p['shop'] == skey]
         rep = None
         st = live['shop_status'].get(skey, {})
-        rank_list = st.get('ms_rank') or st.get('brand_rank') or []
+        # 1순위: 공식 사이트 랭킹 → 2순위: 포털 랭킹(본지명·에스타마 등). 랭킹 자료가 없으면 가짜 1위를 만들지 않는다.
+        rank_list = st.get('official_rank') or st.get('brand_rank') or st.get('ms_rank') or []
+        rank_src = 'official' if (st.get('official_rank') or st.get('brand_rank')) else ('portal' if st.get('ms_rank') else '')
         by_name = {norm_name(c['name']): c for c in cands}
         for rk in rank_list:
             c = by_name.get(norm_name(rk['name']))
             if c and c.get('age'):
                 rep = c
                 break
-        if not rep and shop.get('adapter') in ('estama', 'brand', 'gal', 'gcms', 'suke'):
-            order = sorted([p for p in live['people'] if p['shop'] == skey],
-                           key=lambda x: (x.get('order') if x.get('order') is not None else 9999))
-            for c in order:
-                if c in cands:
-                    rep = c
-                    break
         if rep:
+            rep = dict(rep)
+            rep['rank_src'] = rank_src
+            rep['rank_no'] = next((rk['rank'] for rk in rank_list if norm_name(rk['name']) == norm_name(rep['name'])), None)
             reps2.append(rep)
         elif shop.get('adapter') in ('estama', 'brand', 'gal', 'gcms', 'suke'):
             shop_level.append(shop)

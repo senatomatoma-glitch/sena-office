@@ -934,6 +934,67 @@ def fetch_estama_week(sid, timeout=25):
     return out
 
 
+def parse_rank_rankno(text):
+    """girlypink 계열 /ranking/ — 'ランキング 第N位' + <h3><a>이름(나이)</a>."""
+    out = []
+    for m in re.finditer(r'<p class="rankno">[^<]*?(?:第)?\s*(\d+)\s*位[^<]*</p>\s*<h3>\s*<a[^>]*>\s*([^<(]+?)\s*(?:\((\d+)\))?\s*</a>',
+                         text, re.S):
+        out.append(dict(rank=int(m.group(1)), name=m.group(2).strip()))
+    return out
+
+
+def parse_rank_pranking(text):
+    """에스타마 계열 CMS /ranking/ — <div class="p-ranking-item"> 순서 + p-ranking-item__name."""
+    out = []
+    for b in re.split(r'<div class="p-ranking-item', text)[1:]:
+        nm = re.search(r'p-ranking-item__name">\s*(?:<a[^>]*>)?\s*([^<(]+)', b)
+        if nm and nm.group(1).strip():
+            out.append(dict(rank=len(out) + 1, name=nm.group(1).strip()))
+    return out
+
+
+def parse_rank_rplace(text):
+    """kimiiro /ranking/ — <div class="c-panel" id="r_N"> + c-panel__name."""
+    out = []
+    for m in re.finditer(r'<div class="c-panel"\s+id="r_(\d+)"(.*?)(?=<div class="c-panel"\s+id="r_|\Z)', text, re.S):
+        rk, b = int(m.group(1)), m.group(2)
+        nm = re.search(r'c-panel__name[^"]*">\s*([^<(]+)', b)
+        if nm:
+            out.append(dict(rank=rk, name=nm.group(1).strip()))
+    return sorted(out, key=lambda x: x['rank'])
+
+
+def parse_rank_superhappy(text):
+    """super-happy /ranking/ — 본지명 탭 figure.noN + p.name."""
+    seg = _section(text, 'id="tab1"', ['id="tab2"', 'id="tab3"']) or text
+    out = []
+    for m in re.finditer(r'<figure class="no(\d+)".*?<p class="name">\s*([^<]+)', seg, re.S):
+        out.append(dict(rank=int(m.group(1)), name=m.group(2).strip()))
+    return sorted(out, key=lambda x: x['rank'])
+
+
+RANK_PARSERS = {
+    'brand': parse_brand_ranking,
+    'rankno': parse_rank_rankno,
+    'pranking': parse_rank_pranking,
+    'rplace': parse_rank_rplace,
+    'superhappy': parse_rank_superhappy,
+}
+
+
+def parse_rank_page(text, kind):
+    fn = RANK_PARSERS.get(kind)
+    rows = fn(text) if fn else []
+    seen, out = set(), []
+    for r in rows:
+        k = (r.get('rank'), norm_name(r.get('name')))
+        if not r.get('name') or k in seen:
+            continue
+        seen.add(k)
+        out.append(r)
+    return out
+
+
 def parse_brand_day_labels(text):
     """브랜드 공식 /schedule/ 캘린더의 dN 날짜 라벨 — {dN: 'M/D'}."""
     out = {}
@@ -1002,6 +1063,10 @@ def build_tasks(cache):
     for shop in cache['shops']:
         if not shop.get('active'):
             continue
+        # 공식 랭킹 페이지(검증된 가게만) — card2 '가게 랭킹 1위' 의 1순위 근거
+        if shop.get('rank_page'):
+            tasks.append(dict(kind='official_rank', shop=shop['key'],
+                              url=shop['rank_page']['url'], rank_kind=shop['rank_page']['kind']))
         if shop.get('adapter') in ('gal', 'gcms', 'suke'):
             # 월간 신규 가게: 공식 재적/출근 + (있으면) 에스타마 재적·출근표 보강
             if shop.get('cast_url'):
@@ -1027,8 +1092,6 @@ def build_tasks(cache):
                 for n in (2, 3, 4):
                     tasks.append(dict(kind='brand_schedule_day', shop=shop['key'], day=n,
                                       url=shop['schedule_url'].rstrip('/') + f'/d{n}/'))
-            if shop.get('rank_url'):
-                tasks.append(dict(kind='brand_rank', shop=shop['key'], url=shop['rank_url']))
             continue
         if shop.get('adapter') == 'estama' and shop.get('estama'):
             tasks.append(dict(kind='estama_shop', shop=shop['key'], sid=shop['estama'],
@@ -1250,7 +1313,8 @@ def main():
     week_todo, week_cached, week_stale = plan_week_tasks(cache, wc, now0)
     if quick:
         tasks = [t for t in tasks if (
-            t['kind'] in ('estama_schedule', 'official_schedule', 'ms_rank', 'brand_schedule', 'brand_rank')
+            t['kind'] in ('estama_schedule', 'official_schedule', 'ms_rank', 'brand_schedule', 'brand_rank',
+                          'official_rank')
             or (t['kind'] == 'official' and t.get('adapter') in ('femmefatale', 'zenith'))
         )]
     tasks = tasks + week_todo
@@ -1283,7 +1347,7 @@ def main():
             tag = r.get('shop') or r.get('area')
             print(f"  [{r.get('kind')}] {tag}: {r['method'] or 'FAIL'} {r['seconds']:.1f}s {r['bytes']}b")
     # 에스타마 주간 뷰는 혜잡 페이지가 뜨지 않도록 순차·건수 제한으로
-    cap = int(os.environ.get('SECRET_ESTAMA_WEEK_CAP', '8'))
+    cap = int(os.environ.get('SECRET_ESTAMA_WEEK_CAP', '20'))
     for t in estama_wk[:cap]:
         r = run(t)
         results.append(r)
@@ -1363,6 +1427,14 @@ def main():
             rk = parse_brand_ranking(txt)
             st = shop_status.setdefault(r['shop'], {})
             st['brand_rank'] = rk[:10]
+            rep['parsed'] = len(rk)
+        elif k == 'official_rank':
+            rk = parse_rank_page(txt, r.get('rank_kind'))
+            st = shop_status.setdefault(r['shop'], {})
+            if len(rk) >= 1:
+                st['official_rank'] = rk[:10]
+                st['rank_src'] = 'official'
+                st['rank_page'] = r['url']
             rep['parsed'] = len(rk)
         elif k == 'brand_schedule':
             sched = parse_brand_schedule(txt)

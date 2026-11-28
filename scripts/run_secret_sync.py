@@ -10,11 +10,67 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "work"))
 import secret_build_cards as sbc
 
+ENC_PATH = os.path.join(ROOT, "secret_enc.json")
+WEEK_CACHE = os.path.join(ROOT, "work", "secret_week_cache.json")
+
+
+def _read_old_payload(pin):
+    try:
+        e = json.load(open(ENC_PATH, encoding="utf-8"))
+        key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,
+                         salt=base64.b64decode(e["s"]), iterations=100000).derive(pin.encode("utf-8"))
+        pt = AESGCM(key).decrypt(base64.b64decode(e["i"]), base64.b64decode(e["c"]), None)
+        return json.loads(pt)
+    except Exception as ex:
+        print(f"[week-cache] old payload unreadable ({type(ex).__name__}) — cold start")
+        return None
+
+
+def restore_week_cache(pin):
+    """직전 실행의 secret_enc.json 안 `_wc`(주간 스케줄 캐시)를 복원한다.
+    워크플로가 secret_enc.json 만 커밋하므로, 5분마다 도는 실행 사이에 7일치 캐시를 이어쓰는 유일한 경로.
+    로컬에 이미 더 새 캐시가 있으면 그것을 살리고, 겹치는 항목은 ts 가 새것을 쓴다."""
+    old = _read_old_payload(pin)
+    wc = (old or {}).get("_wc") or {}
+    items = wc.get("items") if isinstance(wc, dict) else None
+    if not isinstance(items, dict) or not items:
+        return
+    cur = {}
+    try:
+        d = json.load(open(WEEK_CACHE, encoding="utf-8"))
+        if isinstance(d.get("items"), dict):
+            cur = d["items"]
+    except Exception:
+        cur = {}
+    for k, v in items.items():
+        if k not in cur or (v or {}).get("ts", 0) > (cur[k] or {}).get("ts", 0):
+            cur[k] = v
+    os.makedirs(os.path.dirname(WEEK_CACHE), exist_ok=True)
+    json.dump({"v": 2, "items": cur}, open(WEEK_CACHE, "w", encoding="utf-8"), ensure_ascii=False)
+    print(f"[week-cache] restored {len(items)} entries from previous secret_enc.json")
+
+
+def read_week_cache():
+    try:
+        import time as _t
+        d = json.load(open(WEEK_CACHE, encoding="utf-8"))
+        items = d.get("items") or {}
+        if not isinstance(items, dict):
+            return None
+        cutoff = _t.time() - 3 * 86400
+        items = {k: v for k, v in items.items() if (v or {}).get("ts", 0) >= cutoff}
+        return {"v": 2, "items": items}
+    except Exception:
+        return None
+
 
 def main():
     fetch_script = os.path.join(ROOT, "work", "secret_fetch.py")
     live_path = os.path.join(ROOT, "work", "secret_live.json")
     cache_path = os.path.join(ROOT, "work", "secret_cache.json")
+
+    pin = os.environ["SECRET_PIN"]
+    restore_week_cache(pin)
 
     subprocess.run([sys.executable, fetch_script, "--quick", "--max-age", "5", "--no-images", "--out", live_path], check=True)
     live = json.load(open(live_path, encoding="utf-8"))
@@ -33,6 +89,8 @@ def main():
             img = ""
         st = p.get("status") or sbc.status_of(p, now)
         tag = ", ".join(sorted(roles)) if roles else ("신입" if p.get("new") else "")
+        if roles and "가게 순위" in roles:
+            tag = sbc.ROLE_LABEL_FN["가게 순위"](p, sh)
         week = p.get("week") or []
         if not any(week):
             week = []
@@ -86,7 +144,7 @@ def main():
 
     cards = [
         {"id": "card1", "title": "🟢 지금 가능 · 오늘 예정", "items": [person_obj(p, roles) for p, roles in c1]},
-        {"id": "card2", "title": "🏪 가게별 랭킹 1위", "items": [person_obj(p) for p in c2_people] + [shop_obj(s) for s in (b.get("shop_level") or [])]},
+        {"id": "card2", "title": "🏪 가게별 랭킹 대표 (공식 랭킹 우선)", "items": [person_obj(p, {'가게 순위'}) for p in c2_people] + [shop_obj(s) for s in (b.get("shop_level") or [])]},
         {"id": "card3", "title": "🌱 신입·체입 최대 컵 TOP 6", "items": [person_obj(p) for p in c3]},
         {"id": "card4", "title": "💎 최대 컵 TOP 6", "items": [person_obj(p) for p in c4]},
         {"id": "card5", "title": "🌸 최연소·최대 컵 TOP 6", "items": [person_obj(p) for p in c5]},
@@ -97,9 +155,11 @@ def main():
     ]
 
     all_items = cards[7]["items"]  # card8 is full union
+    wc = read_week_cache() or {"v": 2, "items": {}}
     payload = json.dumps({
         "updated": now.strftime("%Y-%m-%d %H:%M JST"),
         "week_days": live.get("meta", {}).get("week_days") or [],
+        "_wc": wc,
         "counts": {
             "green": sum(1 for x in all_items if x["status"] == "🟢"),
             "yellow": sum(1 for x in all_items if x["status"] == "🟡"),
