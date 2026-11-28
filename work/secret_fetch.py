@@ -9,11 +9,12 @@
 
 사용: python3 work/secret_fetch.py [--quick] [--max-age MIN] [--no-images] [--workers 18] [--out work/secret_live.json]
 """
-import os, re, sys, json, time, ssl, subprocess, datetime, hashlib, threading
+import os, re, sys, json, time, ssl, subprocess, datetime, hashlib, threading, tempfile
 import urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 _HOST_SEM = {}
+_ESTAMA_BLOCK = {'fails': 0}   # 연속 혜잡 페이지 → 이번 실행에서는 에스타마 주간 뷰 중단
 
 UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 '
       '(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1')
@@ -23,6 +24,10 @@ JINA = 'https://r.jina.ai/'
 BLOCKED_HOSTS = {'www.genkaya.net', 'genkaya.net', 'hihouden.net', 'sumeragi-spa.com',
                  'sukesukekan.com'}
 CACHE_PATH = os.path.join(BASE, 'work/secret_cache.json')
+WEEK_CACHE_PATH = os.path.join(BASE, 'work/secret_week_cache.json')
+WEEK_DAYS = int(os.environ.get('SECRET_WEEK_DAYS', '7'))   # 오늘 포함 7일(오늘~+6)
+WEEK_TTL = int(os.environ.get('SECRET_WEEK_TTL', '1500'))  # 내일 이후 스케줄 캐시(초)
+WDAY = ['월', '화', '수', '목', '금', '토', '일']
 PHOTO_DIR = os.path.join(BASE, 'downloads/secret-photos')
 LOGO_DIR = os.path.join(BASE, 'downloads/secret-logos')
 
@@ -53,8 +58,10 @@ def http_get(url, timeout=20):
     else:
         order = ['urllib', 'curl', 'jina']
     # 호스트별 동시 접속 제한 (에스타마는 병렬 과다 시 900 혼잡 페이지)
-    _HOST_SEM.setdefault(host, threading.Semaphore(5 if host == 'estama.jp' else 8))
+    _HOST_SEM.setdefault(host, threading.Semaphore(3 if host == 'estama.jp' else 8))
     for attempt in range(2):
+        if host == 'estama.jp':
+            time.sleep(0.3 + (hash(threading.get_ident() + attempt) % 5) * 0.12)
         with _HOST_SEM[host]:
             for m in order:
                 if m == 'urllib':
@@ -297,11 +304,11 @@ def parse_genkaya_girl(text):
 
 def parse_genkaya_schedule(text):
     out = {}
-    pat = re.compile(r'\[(?:日本橋\s+)?([^\[\]]+?)\s(\d+)分\s?(\d+)円\((\d+)\)\s*T\.(\d+)\s*B\.(\d+)\(([A-K])\)\s*/\s*W\.\d+\s*/\s*H\.\d+\s*'
-                     r'(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*【(.*?)】\]')
+    pat = re.compile(r'\[(?:日本橋\s+)?([^\[\]]+?)\s(\d+)分\s?(\d+)円\((\d+)\)\s*T\.(\d+)\s*B\.(\d+)\(([A-K])\)\s*/\s*W\.[\d.]+\s*/\s*H\.[\d.]+\s*'
+                     r'(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})(?:\s*【(.*?)】)?\]')
     for m in pat.finditer(text):
         name, _, _, age, ht, bust, cup, op, cl, st = m.groups()
-        out[norm_name(name)] = dict(open=op, close=cl, state=st, cup=cup, height=int(ht), age=int(age))
+        out[norm_name(name)] = dict(open=op, close=cl, state=st or '', cup=cup, height=int(ht), age=int(age))
     return out
 
 
@@ -767,6 +774,174 @@ def parse_suke_schedule(text, host=None):
     return out
 
 
+def _section(text, start_kw, end_kws):
+    i = text.find(start_kw)
+    if i < 0:
+        return ''
+    ends = [j for j in (text.find(k, i + 1) for k in end_kws) if j >= 0]
+    return text[i:min(ends)] if ends else text[i:]
+
+
+def _today_map(people):
+    """parse_* 결과(각 인물의 today) → 출근표 맵 {normname: {open, close, state, soldout}}."""
+    out = {}
+    for nm, p in people.items():
+        t = p.get('today') or {}
+        if t.get('open') and t.get('close'):
+            out[nm] = dict(open=t['open'], close=t['close'], state='出勤', soldout=False)
+    return out
+
+
+def parse_superhappy_happy_schedule(text):
+    """super-happy.net /schedule?day=N — 3개 자매점 중 HAPPY 섹션만."""
+    seg = _section(text, 'id="today_happy"', ['id="today_otona"', 'id="today_akuma"'])
+    return parse_superhappy_schedule(seg or text)
+
+
+def parse_kimiiro_schedule(text):
+    return _today_map(parse_kimiiro(text))
+
+
+def parse_sumeragi_schedule(text):
+    return _today_map(parse_sumeragi(text))
+
+
+def parse_cream_schedule(text):
+    """cream-osaka.com/sp/schedule.html?day=N — <li class="scheduleOne"> 카드의 이름·시간."""
+    out = {}
+    blocks = re.split(r'<li class="scheduleOne"', text)[1:]
+    for b in blocks:
+        nm = re.search(r'<span class="name">(.*?)</span>', b, re.S)
+        tm = re.search(r'(\d{1,2}:\d{2})\s*[~〜]\s*(\d{1,2}:\d{2})', b)
+        if not nm or not tm:
+            continue
+        name = re.sub(r'<[^>]+>', '', nm.group(1)).strip()
+        name = re.sub(r'さん$', '', name).strip()
+        if not name:
+            continue
+        out[norm_name(name)] = dict(open=tm.group(1), close=tm.group(2), state='出勤', soldout=False)
+    return out
+
+
+def parse_next_shift(text, now, days=None):
+    """gal CMS /list/ 의 '次回 11/30(月) 12:00-18:00' → {normname: (week_index, 'HH:MM~HH:MM')}."""
+    days = days or WEEK_DAYS
+    out = {}
+    pat = re.compile(r'<h3>\s*([^<>]{1,20}?)\s*\(\s*(\d{2})\s*\)\s*</h3>(.{0,600}?)'
+                     r'次回\s*(\d{1,2})/(\d{1,2})[^)]{0,6}\)\s*'
+                     r'(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})', re.S)
+    for m in pat.finditer(text):
+        name, mm, dd, op, cl = m.group(1), int(m.group(4)), int(m.group(5)), m.group(6), m.group(7)
+        try:
+            year = now.year if mm >= now.month - 6 else now.year + 1
+            idx = (datetime.date(year, mm, dd) - now.date()).days
+        except ValueError:
+            continue
+        if 0 <= idx < days:
+            out[norm_name(name)] = (idx, f"{op}~{cl}")
+    return out
+
+
+def parse_estama_week(text, now):
+    """에스타마 出勤表 'セラピスト別' 주간 뷰 → {normname: [7일치 'HH:MM~HH:MM' 또는 '']}."""
+    out = {}
+    mstart = re.search(r'cast_sce_tgday">\s*<span[^>]*>\s*(\d{1,2})/(\d{1,2})', text)
+    start = now.date()
+    if mstart:
+        mm, dd = int(mstart.group(1)), int(mstart.group(2))
+        try:
+            year = now.year if mm >= now.month - 6 else now.year + 1
+            start = datetime.date(year, mm, dd)
+        except ValueError:
+            start = now.date()
+    for block in re.split(r'<div class="cast-schedule-row">', text)[1:]:
+        nm = re.search(r'class="cast-name">\s*(.*?)\s*(?:\(\d+\))?\s*</span>', block, re.S)
+        if not nm:
+            continue
+        name = re.sub(r'<[^>]+>', '', nm.group(1)).strip()
+        name = re.sub(r'\(\d+\)', '', name).strip()
+        if not name:
+            continue
+        wk = [''] * WEEK_DAYS
+        rows = re.split(r'<div class="daily-row', block)[1:]
+        for ri, row in enumerate(rows[:WEEK_DAYS]):
+            tms = re.findall(r'>\s*(\d{1,2}:\d{2})\s*<', row)
+            dnum = re.search(r'label-pc">\s*(\d{1,2})', row)
+            idx = ri
+            if dnum:
+                try:
+                    idx = (datetime.date(start.year, start.month, int(dnum.group(1))) - now.date()).days
+                except ValueError:
+                    idx = ri
+            if idx < 0 or idx >= WEEK_DAYS or len(tms) < 2:
+                continue
+            wk[idx] = f"{tms[0].zfill(5) if len(tms[0]) == 4 else tms[0]}~{tms[1]}"
+        if any(wk):
+            out[norm_name(name)] = wk
+    return out
+
+
+def fetch_estama_week(sid, timeout=25):
+    """에스타마 出勤表 POST /post/shop_schedule_ctrl (view=week) — 쿠키+CSRF 필요."""
+    if _ESTAMA_BLOCK['fails'] >= 3:
+        return dict(url=f'https://estama.jp/shop/{sid}/schedule/ [week]', method=None, status=0,
+                    text='', bytes=0, seconds=0.0, error='estama congested (skipped this run)')
+    page = f'https://estama.jp/shop/{sid}/schedule/'
+    out = dict(url=page + ' [week]', method=None, status=0, text='', bytes=0, seconds=0.0, error=None)
+    t0 = time.time()
+    jar = None
+    try:
+        fd, jar = tempfile.mkstemp(prefix='estama_', suffix='.jar')
+        os.close(fd)
+        sem = _HOST_SEM.setdefault('estama.jp', threading.Semaphore(3))
+        time.sleep(0.4 + (hash(sid) % 5) * 0.15)
+        with sem:
+            r = subprocess.run(['curl', '-sSL', '--compressed', '-m', str(timeout), '-A', UA, '-c', jar, page],
+                               capture_output=True, timeout=timeout + 5)
+            html = r.stdout.decode('utf-8', errors='replace')
+            m = re.search(r"CSRF_TOKEN_VALUE',\s*\"([^\"]+)\"", html) or re.search(r'name="ctk" value="([^"]+)"', html)
+            if not m:
+                if '混み合' in html or len(html) < 3000:
+                    _ESTAMA_BLOCK['fails'] += 1
+                out['error'] = 'no ctk (congested)' if '混み合' in html else 'no ctk'
+                return out
+            time.sleep(0.4)
+            r2 = subprocess.run(['curl', '-sS', '-m', str(timeout), '-A', UA, '-b', jar, '-c', jar,
+                                 '-H', 'X-Requested-With: XMLHttpRequest', '-H', f'Referer: {page}',
+                                 '-H', 'Origin: https://estama.jp',
+                                 '--data-urlencode', 'ctk=' + m.group(1),
+                                 '--data', 'view=week&shop_id=' + str(sid),
+                                 'https://estama.jp/post/shop_schedule_ctrl'],
+                                capture_output=True, timeout=timeout + 5)
+        body = r2.stdout.decode('utf-8', errors='replace')
+        try:
+            html2 = (json.loads(body) or {}).get('html') or ''
+        except Exception:
+            html2 = ''
+        if len(html2) > 500:
+            out.update(method='curl-post', status=200, text=html2, bytes=len(html2))
+        else:
+            out['error'] = 'empty week html'
+    except Exception as e:
+        out['error'] = f'{type(e).__name__}: {e}'
+    finally:
+        if jar:
+            try:
+                os.unlink(jar)
+            except Exception:
+                pass
+    out['seconds'] = time.time() - t0
+    return out
+
+
+def parse_brand_day_labels(text):
+    """브랜드 공식 /schedule/ 캘린더의 dN 날짜 라벨 — {dN: 'M/D'}."""
+    out = {}
+    for m in re.finditer(r'href="[^"]*schedule/d(\d)/"[^>]*>\s*(\d{1,2})/(\d{1,2})', text, re.S):
+        out[int(m.group(1))] = f"{int(m.group(2))}/{int(m.group(3))}"
+    return out
+
+
 NEW_ADAPTERS = ('gal', 'gcms', 'suke')
 
 OFFICIAL_PARSERS = {
@@ -915,6 +1090,131 @@ def fetch_brand_list_json(t):
                 error=None if pages else (err or 'empty'))
 
 
+def _parse_week_day(text, r):
+    """week_day 태스크 1건 → {normname: {open, close, state, soldout}}"""
+    ad = r.get('adapter')
+    if ad == 'brand':
+        return parse_brand_schedule(text)
+    if ad == 'sumeragi':
+        return parse_sumeragi_schedule(text)
+    if ad == 'superhappy':
+        return parse_superhappy_happy_schedule(text)
+    if ad == 'kimiiro':
+        return parse_kimiiro_schedule(text)
+    if ad == 'cream':
+        return parse_cream_schedule(text)
+    if ad == 'gcms':
+        return parse_gcms_schedule(text, re.sub(r'^https?://', '', r['url']).split('/')[0])
+    if ad == 'genkaya':
+        return parse_genkaya_schedule(text)
+    if ad == 'hihouden':
+        return parse_hihouden_schedule(text)
+    return {}
+
+
+def week_spec(shop):
+    """가게별 7일치 출근표 소스 설계.
+    - {'estama': sid}  : 에스타마 出勤表 'セラピスト別' 주간 뷰 (7일 한 번에)
+    - {'days': [(i, url)], 'adapter': ..., 'section': ...} : 공식 날짜별 페이지 (i=1..)
+    둘 다 있을 수 있고, 공식 우선 + 에스타마 보충으로 합쳐진다."""
+    spec = {}
+    adapter = shop.get('adapter')
+    wk_sid = shop.get('week_estama')
+    if not wk_sid and adapter in ('estama', 'gal', 'suke', 'orenoie'):
+        wk_sid = shop.get('estama_cast') or shop.get('estama')
+    if wk_sid:
+        spec['estama'] = str(wk_sid)
+    days = []
+    sched = shop.get('schedule_url')
+    if adapter == 'brand' and sched:
+        base = sched.rstrip('/')
+        for i in range(1, WEEK_DAYS):
+            days.append((i, f"{base}/d{i + 1}/"))
+        spec['adapter'] = 'brand'
+    elif adapter == 'sumeragi' and sched:
+        base = sched.rstrip('/') + '/schedule'
+        for i in range(1, WEEK_DAYS):
+            days.append((i, f"{base}/d{i + 1}/"))
+        spec['adapter'] = 'sumeragi'
+    elif adapter in ('superhappy', 'kimiiro', 'cream', 'gcms', 'genkaya', 'hihouden'):
+        if adapter == 'hihouden':
+            base = 'https://hihouden.net/schedule'
+        elif adapter == 'genkaya':
+            base = 'https://www.genkaya.net/s/schedule'
+        elif adapter == 'cream':
+            base = sched or shop.get('cast_url') or ''
+        else:
+            base = sched or ''
+        if base:
+            sep = '&' if '?' in base else '?'
+            for i in range(1, WEEK_DAYS):
+                days.append((i, f"{base}{sep}day={i}"))
+            spec['adapter'] = adapter
+            if adapter == 'superhappy':
+                spec['section'] = 'happy'
+    if days:
+        spec['days'] = days
+    return spec or None
+
+
+def load_week_cache():
+    try:
+        with open(WEEK_CACHE_PATH, encoding='utf-8') as f:
+            d = json.load(f)
+        if d.get('v') == 2 and isinstance(d.get('items'), dict):
+            return d
+    except Exception:
+        pass
+    return {'v': 2, 'items': {}}
+
+
+def save_week_cache(wc):
+    try:
+        cutoff = time.time() - 3 * 86400
+        items = {k: v for k, v in wc.get('items', {}).items() if (v or {}).get('ts', 0) >= cutoff}
+        with open(WEEK_CACHE_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'v': 2, 'items': items}, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def plan_week_tasks(cache, wc, now):
+    """7일치 수집 작업 계획 — 내일 이후는 WEEK_TTL 캐시, 오늘/캐시 없음만 실제 fetch.
+    반환: (todo, cached, stale) — stale 은 TTL 지난 예전 값(수집 실패 시 보충용)."""
+    todo, cached, stale = [], {}, {}
+    for shop in cache['shops']:
+        if not shop.get('active'):
+            continue
+        spec = week_spec(shop)
+        if not spec:
+            continue
+        key = shop['key']
+        slot = cached.setdefault(key, {})
+        st_slot = stale.setdefault(key, {})
+        if spec.get('estama'):
+            ck = f"estama|{now.date().isoformat()}|{spec['estama']}"
+            ent = wc['items'].get(ck)
+            if ent and (time.time() - ent.get('ts', 0)) < WEEK_TTL and ent.get('w'):
+                slot['estama'] = ent['w']
+            else:
+                if ent and ent.get('w'):
+                    st_slot['estama'] = ent['w']
+                todo.append(dict(kind='estama_week', shop=key, sid=spec['estama'],
+                                 url=f"https://estama.jp/shop/{spec['estama']}/schedule/ [week]",
+                                 ck=ck, age=1e9 if not ent else time.time() - ent.get('ts', 0)))
+        for i, url in spec.get('days') or []:
+            ck = f"{spec['adapter']}|{now.date().isoformat()}|{url}"
+            ent = wc['items'].get(ck)
+            if ent and (time.time() - ent.get('ts', 0)) < WEEK_TTL and isinstance(ent.get('d'), dict):
+                slot.setdefault('days', {})[i] = ent['d']
+            else:
+                if ent and isinstance(ent.get('d'), dict):
+                    st_slot.setdefault('days', {})[i] = ent['d']
+                todo.append(dict(kind='week_day', shop=key, adapter=spec['adapter'], day=i,
+                                 url=url, ck=ck, section=spec.get('section')))
+    return todo, cached, stale
+
+
 def main():
     args = sys.argv[1:]
     no_images = '--no-images' in args
@@ -945,19 +1245,30 @@ def main():
     quick = want_quick and prev_live is not None
     cache = load_cache()
     tasks = build_tasks(cache)
+    now0 = datetime.datetime.now()
+    wc = load_week_cache()
+    week_todo, week_cached, week_stale = plan_week_tasks(cache, wc, now0)
     if quick:
         tasks = [t for t in tasks if (
             t['kind'] in ('estama_schedule', 'official_schedule', 'ms_rank', 'brand_schedule', 'brand_rank')
-            or (t['kind'] == 'official' and t.get('adapter') == 'femmefatale')
+            or (t['kind'] == 'official' and t.get('adapter') in ('femmefatale', 'zenith'))
         )]
+    tasks = tasks + week_todo
+    estama_wk = sorted([t for t in tasks if t.get('kind') == 'estama_week'],
+                       key=lambda t: -(t.get('age') or 0))
+    tasks = [t for t in tasks if t.get('kind') != 'estama_week']
     t_start = time.time()
     report = []
     mode_tag = 'quick' if quick else 'full'
-    print(f'[secret_fetch] {len(tasks)} sources ({mode_tag}), workers={workers}')
+    print(f'[secret_fetch] {len(tasks)} sources ({mode_tag}), week {WEEK_DAYS}d: '
+          f'{len(week_todo)} fetch({len(estama_wk)} estama) / '
+          f'{sum(1 for v in week_cached.values() if v)} shops cached, workers={workers}')
 
     def run(t):
         if t.get('kind') == 'brand_list_json':
             r = fetch_brand_list_json(t)
+        elif t.get('kind') == 'estama_week':
+            r = fetch_estama_week(t['sid'])
         else:
             r = http_get(t['url'])
         r.update({k: v for k, v in t.items() if k != 'url'})
@@ -971,6 +1282,16 @@ def main():
             results.append(r)
             tag = r.get('shop') or r.get('area')
             print(f"  [{r.get('kind')}] {tag}: {r['method'] or 'FAIL'} {r['seconds']:.1f}s {r['bytes']}b")
+    # 에스타마 주간 뷰는 혜잡 페이지가 뜨지 않도록 순차·건수 제한으로
+    cap = int(os.environ.get('SECRET_ESTAMA_WEEK_CAP', '8'))
+    for t in estama_wk[:cap]:
+        r = run(t)
+        results.append(r)
+        print(f"  [{r.get('kind')}] {t['shop']}: {r['method'] or 'FAIL'} {r['seconds']:.1f}s {r['bytes']}b")
+        if _ESTAMA_BLOCK['fails'] >= 3:
+            print('  [estama_week] congested — remaining shops skipped this run')
+            break
+        time.sleep(0.8)
     elapsed = time.time() - t_start
 
     # ---- parse
@@ -988,7 +1309,11 @@ def main():
         shop_status = {}  # shop_key -> dict(ms_ok, official_ok, note)
     schedules = {}    # shop -> {normname: {open, close, state, soldout}}
     day_schedules = {}  # shop -> {day_no: {normname: {...}}}
+    week_maps = {}    # shop -> {day_no: {normname: 'HH:MM~HH:MM'}} / {'estama': {normname: [7]}} / {'next': {...}}
     img_downloads = []
+
+    def week_slot(shop):
+        return week_maps.setdefault(shop, {})
 
     for r in results:
         rep = dict(url=r['url'], kind=r.get('kind'), shop=r.get('shop'), area=r.get('area'),
@@ -1118,6 +1443,11 @@ def main():
                 if not rec.get('name'):
                     rec['name'] = p['name']
             rep['parsed'] = len(ops)
+            if r['adapter'] in ('femmefatale', 'zenith'):
+                nx = parse_next_shift(txt, now0)
+                if nx:
+                    week_slot(r['shop'])['next'] = nx
+                    rep['week_next'] = len(nx)
         elif k == 'official_schedule':
             fn = {'genkaya': parse_genkaya_schedule, 'hihouden': parse_hihouden_schedule,
                   'superhappy': parse_superhappy_schedule, 'orenoie': parse_orenoie_schedule,
@@ -1130,6 +1460,22 @@ def main():
                 {nm: dict(open=s['open'], close=s['close'], state=s.get('state', '出勤'),
                           soldout='完売' in (s.get('state') or '')) for nm, s in sched.items()})
             rep['parsed'] = len(sched)
+        elif k == 'estama_week':
+            wk = parse_estama_week(txt, now0)
+            week_slot(r['shop'])['estama'] = wk
+            if r.get('ck') and wk:
+                wc['items'][r['ck']] = dict(ts=time.time(), w=wk)
+                week_cached.setdefault(r['shop'], {})['estama'] = wk
+            rep['parsed'] = len(wk)
+        elif k == 'week_day':
+            sched = _parse_week_day(txt, r)
+            if sched:
+                pm = {nm: f"{s['open']}~{s['close']}" for nm, s in sched.items() if s.get('open') and s.get('close')}
+                week_slot(r['shop']).setdefault(r['day'], {}).update(pm)
+                if r.get('ck') and pm:
+                    wc['items'][r['ck']] = dict(ts=time.time(), d=pm)
+                    week_cached.setdefault(r['shop'], {}).setdefault('days', {})[r['day']] = pm
+            rep['parsed'] = len(sched or {})
 
     # ---- apply schedules (all parsed, race-free)
     for shop, sched in schedules.items():
@@ -1237,6 +1583,52 @@ def main():
         people[f"{sp['shop']}|{norm_name(sp['name'])}"] = rec
         existing_keys.add(key)
 
+    # ---- 오늘~+6일 출근표 (공식 날짜별 페이지 + 에스타마 주간 뷰 보충)
+    week_labels = []
+    for i in range(WEEK_DAYS):
+        d = now + datetime.timedelta(days=i)
+        week_labels.append(f"{d.month}/{d.day}({WDAY[d.weekday()]})")
+    # 캐시로 대체된 가게의 7일치도 합친다
+    for shk, slot in week_cached.items():
+        ws = week_slot(shk)
+        if slot.get('estama'):
+            ws.setdefault('estama', slot['estama'])
+        for i, pm in (slot.get('days') or {}).items():
+            ws.setdefault(i, {}).update(pm)
+    # 수집 실패한 가게는 TTL 지난 예전 값으로라도 메운다
+    for shk, slot in week_stale.items():
+        ws = week_slot(shk)
+        if slot.get('estama') and not ws.get('estama'):
+            ws['estama'] = slot['estama']
+        for i, pm in (slot.get('days') or {}).items():
+            cur = ws.setdefault(i, {})
+            for nm, s in pm.items():
+                cur.setdefault(nm, s)
+    week_stats = {}
+    for rec in people.values():
+        nm = norm_name(rec['name'])
+        slot = week_maps.get(rec['shop']) or {}
+        wk = [''] * WEEK_DAYS
+        t = rec.get('today') or {}
+        if t.get('open') and t.get('close'):
+            wk[0] = f"{t['open']}~{t['close']}"
+        for i in range(1, WEEK_DAYS):
+            s = (slot.get(i) or {}).get(nm)
+            if s:
+                wk[i] = s
+        for i, s in enumerate((slot.get('estama') or {}).get(nm, [])[:WEEK_DAYS]):
+            if s and not wk[i]:
+                wk[i] = s
+        nx = (slot.get('next') or {}).get(nm)
+        if nx and not wk[nx[0]]:
+            wk[nx[0]] = nx[1]
+        if any(wk):
+            rec['week'] = wk
+            rows = [f"{week_labels[i]} {wk[i]}" for i in range(1, WEEK_DAYS) if wk[i]]
+            if rows:
+                rec['next_shift'] = ' · '.join(rows[:3])
+            week_stats[rec['shop']] = week_stats.get(rec['shop'], 0) + 1
+
     # ---- today status / price / image
     for rec in people.values():
         rec['status'] = status_of(rec, now)
@@ -1268,7 +1660,8 @@ def main():
     # ---- output
     live = dict(
         meta=dict(fetched_at=now.isoformat(timespec='seconds'), elapsed_sec=round(elapsed, 2),
-                  sources=len(tasks), workers=workers),
+                  sources=len(tasks), workers=workers,
+                  week_days=week_labels, week_fetched=len(week_todo), week_cached_shops=len(week_cached)),
         shops=shops,
         shop_status=shop_status,
         estama_shop_rank={},
@@ -1286,8 +1679,11 @@ def main():
     with open(os.path.join(BASE, 'work/secret_fetch_report.json'), 'w', encoding='utf-8') as f:
         json.dump(rep_out, f, ensure_ascii=False, indent=1)
     ok = rep_out['ok']
+    save_week_cache(wc)
     print(f"\n[secret_fetch] done in {elapsed:.1f}s — {ok}/{len(report)} sources OK, "
           f"{len(people)} people, browser fallback: {len(rep_out['browser_fallback'])}")
+    print(f"[secret_fetch] week {WEEK_DAYS}d: {len(week_stats)}/{len(cache['shops'])} shops, "
+          f"people with week data {sum(1 for p in people.values() if p.get('week'))}/{len(people)}")
     for t in report:
         if t['status'] != 200:
             print(f"  FAIL {t['kind']} {t.get('shop') or t.get('area')} {t['url']} :: {t.get('error')}")

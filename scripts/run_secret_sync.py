@@ -33,6 +33,9 @@ def main():
             img = ""
         st = p.get("status") or sbc.status_of(p, now)
         tag = ", ".join(sorted(roles)) if roles else ("신입" if p.get("new") else "")
+        week = p.get("week") or []
+        if not any(week):
+            week = []
         return {
             "name": p.get("name") or "",
             "age": p.get("age"),
@@ -48,6 +51,7 @@ def main():
             "img": img,
             "new": bool(p.get("new")),
             "tag": tag,
+            "week": week,
         }
 
     def shop_obj(s):
@@ -95,6 +99,7 @@ def main():
     all_items = cards[7]["items"]  # card8 is full union
     payload = json.dumps({
         "updated": now.strftime("%Y-%m-%d %H:%M JST"),
+        "week_days": live.get("meta", {}).get("week_days") or [],
         "counts": {
             "green": sum(1 for x in all_items if x["status"] == "🟢"),
             "yellow": sum(1 for x in all_items if x["status"] == "🟡"),

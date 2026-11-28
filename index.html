@@ -62,6 +62,21 @@
   }
   nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px 10px 12px; }
   .s-card { display: flex; gap: 11px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 11px; margin-bottom: 9px; align-items: flex-start; }
+  /* 📅 카드 안 7일치 출근 스트립 */
+  .s-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 6px; }
+  .s-wd { display: block; text-align: center; border: 1px solid var(--border); background: #FAF4EB; border-radius: 6px; padding: 2px 0 1px; line-height: 1.12; overflow: hidden; }
+  .s-wd b { display: block; font-size: 9px; font-weight: 800; color: #A08970; letter-spacing: -0.6px; white-space: nowrap; }
+  .s-wd b em { font-style: normal; font-size: 8px; font-weight: 700; color: #B09A82; margin-left: 1px; }
+  .s-wd i { display: block; font-style: normal; font-size: 8px; font-weight: 700; color: #C3B4A3; letter-spacing: -0.5px; white-space: nowrap; }
+  .s-wd.on { background: var(--green-bg); border-color: #B7E4CE; }
+  .s-wd.on b { color: var(--green); }
+  .s-wd.on i { color: var(--green); }
+  .s-wd.today { background: #FFF3D6; border-color: #EFC97A; }
+  .s-wd.today b { color: #92400E; }
+  .s-wd.today i { color: #B45309; }
+  .s-week-foot { display: flex; align-items: center; gap: 5px; margin: 1px 0 7px; }
+  .s-week-foot button { border: 1px solid var(--border); background: var(--card); color: var(--brown); border-radius: 11px; padding: 4px 9px; font-size: 10.5px; font-weight: 700; cursor: pointer; }
+  .s-week-foot button.active { background: var(--brown); color: #fff; border-color: var(--brown); }
   .s-img { width: 74px; height: 96px; object-fit: cover; border-radius: 12px; background: #EFE3D3; flex-shrink: 0; }
   .s-body { flex: 1; min-width: 0; }
   .s-actions { display: flex; gap: 6px; margin-top: 7px; }
@@ -200,7 +215,7 @@
   .b-hold { background: #F3F4F6; color: #4B5563; }
   .b-done { background: var(--green-bg); color: var(--green); }
   .filter-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 6px; }
-  /* 🤫 비밀 탭: 기본(전체)은 6열 2행으로 한눈에, 세부 필터 선택 시 한 줄 가로 스크롤 */
+  /* 🤫 비밀 탭: 필터는 항상 6열 2행 고정 */
   #sec-filters.sec-grid {
     display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 3px; overflow-x: visible; padding-bottom: 4px;
@@ -432,6 +447,10 @@
         <button class="f-btn" onclick="setSecFilter('card7', this)">7.H컵155↓</button>
         <button class="f-btn" onclick="setSecFilter('card8', this)">8.전체인원</button>
         <button class="f-btn" onclick="setSecFilter('card9', this)">9.프리</button>
+      </div>
+      <div class="s-week-foot">
+        <button id="sec-week-only" onclick="toggleWeekOnly()">📅 이번주 출근만</button>
+        <span id="sec-week-hint" class="t-meta" style="font-size:10px;margin:0;"></span>
       </div>
       <div id="secret-list"></div>
     </div>
@@ -1376,19 +1395,43 @@ function lockSecret() {
 }
 function setSecFilter(f, btn) {
   curSecFilter = f;
-  const row = document.getElementById('sec-filters');
   document.querySelectorAll('#sec-filters .f-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  const isAll = (f === '전체');
-  if (row) {
-    row.classList.toggle('sec-grid', isAll);
-    row.classList.toggle('sec-line', !isAll);
-    if (isAll) row.scrollLeft = 0;
-  }
   renderSecret();
-  if (!isAll && btn && typeof btn.scrollIntoView === 'function') {
-    setTimeout(() => { try { btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (e) { btn.scrollIntoView(); } }, 30);
-  }
+}
+let secWeekOnly = false;
+function toggleWeekOnly() {
+  secWeekOnly = !secWeekOnly;
+  const b = document.getElementById('sec-week-only');
+  if (b) b.classList.toggle('active', secWeekOnly);
+  renderSecret();
+}
+function hasWeek(x) { return !!(x && x.week && x.week.some(Boolean)); }
+function weekStrip(x) {
+  const wd = (SEC_DATA && SEC_DATA.week_days) || [];
+  const wk = (x && x.week) || [];
+  if (!wd.length || !wk.length || !hasWeek(x)) return '';
+  const cells = wd.map((label, i) => {
+    const m = String(label).match(/(\d{1,2})\/(\d{1,2})(?:\(([^)]+)\))?/);
+    const dd = m ? m[2] : '';
+    const dow = (m && m[3]) ? m[3] : '';
+    const s = wk[i] || '';
+    let txt = '–';
+    if (s) {
+      const m2 = String(s).match(/(\d{1,2}):(\d{2})\s*[~～-]\s*(\d{1,2}):(\d{2})/);
+      if (m2) {
+        const a = m2[2] === '00' ? m2[1] : `${m2[1]}:${m2[2]}`;
+        const b = m2[4] === '00' ? m2[3] : `${m2[3]}:${m2[4]}`;
+        txt = `${a}~${b}`;
+      } else {
+        txt = s;
+      }
+    }
+    const cls = 's-wd' + (i === 0 ? ' today' : '') + (s ? ' on' : '');
+    const tip = `${label} ${s ? s : '출근 없음'}`;
+    return `<span class="${cls}" title="${esc(tip)}"><b>${esc(dd)}<em>${esc(dow)}</em></b><i>${esc(txt)}</i></span>`;
+  }).join('');
+  return `<div class="s-week">${cells}</div>`;
 }
 function renderSecCardHtml(x) {
   return `
@@ -1402,6 +1445,7 @@ function renderSecCardHtml(x) {
         ${x.is_shop ? '' : `<div class="t-meta" style="margin-top:0;">${x.age ? x.age+'세 · ' : ''}${x.cup ? x.cup+'컵 · ' : ''}${x.height ? x.height+'cm' : ''}</div>`}
         <div class="t-title" style="font-size:12.5px;margin-top:3px;">${esc(x.shop)}${x.area ? ' ('+esc(x.area)+')' : ''}</div>
         <div class="t-meta">${esc(x.today)} ${x.price ? '· '+esc(x.price) : ''}</div>
+        ${x.is_shop ? '' : weekStrip(x)}
         <div class="s-actions">
           ${x.phone ? `<a class="s-btn call" href="tel:${esc(x.phone)}">📞 ${esc(x.phone)}</a>` : ''}
           ${x.url ? `<a class="s-btn" href="${esc(x.url)}" target="_blank">🔗 ${x.is_shop ? '공식홈' : '프로필'}</a>` : ''}
@@ -1414,13 +1458,19 @@ function renderSecret() {
   if (!SEC_DATA) return;
   const kw = (document.getElementById('s-search')?.value || '').trim().toLowerCase();
   const cards = SEC_DATA.cards || [];
-  const matchKw = x => !kw || `${x.name} ${x.shop} ${x.area} ${x.cup} ${x.tag}`.toLowerCase().includes(kw);
+  const matchKw = x => (!kw || `${x.name} ${x.shop} ${x.area} ${x.cup} ${x.tag}`.toLowerCase().includes(kw))
+                        && (!secWeekOnly || hasWeek(x));
+  const hint = document.getElementById('sec-week-hint');
+  if (hint) {
+    const pool = (SEC_DATA.items || []);
+    hint.innerText = secWeekOnly ? `이번주 출근 ${pool.filter(hasWeek).length}명만 표시` : '';
+  }
 
   if (cards.length && (curSecFilter === '전체' || curSecFilter.startsWith('card'))) {
     const targetCards = curSecFilter === '전체' ? cards : cards.filter(c => c.id === curSecFilter);
     const html = targetCards.map(c => {
       const list = (c.items || []).filter(matchKw);
-      if (!list.length && kw) return '';
+      if (!list.length && (kw || secWeekOnly)) return '';
       return `<div class="subhead" style="margin-top:14px;"><h3>${esc(c.title)} (${list.length})</h3></div>` +
         (list.map(renderSecCardHtml).join('') || '<p class="t-meta" style="padding:8px 0;">해당 인원이 없어.</p>');
     }).filter(Boolean).join('');
