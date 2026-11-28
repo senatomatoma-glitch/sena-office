@@ -200,7 +200,10 @@
         <div class="brand-sub"><span class="dot-green"></span> <span id="hdr-sub">부서별 5실 + 라운지</span></div>
       </div>
     </div>
-    <button class="lock-mini" onclick="lockNow()">🔒 잠금</button>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <button class="lock-mini" onclick="location.replace(location.pathname+'?t='+Date.now())" title="새로고침">🔄</button>
+      <button class="lock-mini" onclick="lockNow()">🔒 잠금</button>
+    </div>
   </header>
 
   <nav>
