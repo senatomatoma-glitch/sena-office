@@ -67,15 +67,28 @@ def main():
             "tag": sbc.home_badge(s.get("name") or "", s) or "",
         }
 
+    def ord_key(p):
+        """카드 안 순서: 🟢 → 🟡 → 📅 → ⚪ → ❔ (출근시간·다음 출근일 빠른 순)."""
+        return sbc.display_order(p, now)
+
+    c1 = sorted((b.get("card1") or []), key=lambda pr: ord_key(pr[0]))
+    c2_people = sorted((b.get("reps2") or []), key=ord_key)
+    c3 = sorted((b.get("card3") or []), key=ord_key)
+    c4 = sorted((b.get("card4") or []), key=ord_key)
+    c5 = sorted((b.get("card5") or []), key=ord_key)
+    c6 = sorted((b.get("card6") or []), key=ord_key)
+    c7 = sorted((b.get("card7") or []), key=ord_key)
+    c8 = sorted((b.get("card8") or []), key=lambda v: ord_key(v["p"]))
+
     cards = [
-        {"id": "card1", "title": "🟢 지금 가능 · 오늘 예정", "items": [person_obj(p, roles) for p, roles in (b.get("card1") or [])]},
-        {"id": "card2", "title": "🏪 가게별 랭킹 1위", "items": [person_obj(p) for p in (b.get("reps2") or [])] + [shop_obj(s) for s in (b.get("shop_level") or [])]},
-        {"id": "card3", "title": "🌱 신입·체입 최대 컵 TOP 6", "items": [person_obj(p) for p in (b.get("card3") or [])]},
-        {"id": "card4", "title": "💎 최대 컵 TOP 6", "items": [person_obj(p) for p in (b.get("card4") or [])]},
-        {"id": "card5", "title": "🌸 최연소·최대 컵 TOP 6", "items": [person_obj(p) for p in (b.get("card5") or [])]},
-        {"id": "card6", "title": "✨ 최대 컵·연상 우선 TOP 6", "items": [person_obj(p) for p in (b.get("card6") or [])]},
-        {"id": "card7", "title": "🔥 H컵 이상 · 155cm 이하 TOP 6", "items": [person_obj(p) for p in (b.get("card7") or [])]},
-        {"id": "card8", "title": "📋 전체 인원 리스트", "items": [person_obj(v["p"], v.get("roles")) for v in (b.get("card8") or [])]},
+        {"id": "card1", "title": "🟢 지금 가능 · 오늘 예정", "items": [person_obj(p, roles) for p, roles in c1]},
+        {"id": "card2", "title": "🏪 가게별 랭킹 1위", "items": [person_obj(p) for p in c2_people] + [shop_obj(s) for s in (b.get("shop_level") or [])]},
+        {"id": "card3", "title": "🌱 신입·체입 최대 컵 TOP 6", "items": [person_obj(p) for p in c3]},
+        {"id": "card4", "title": "💎 최대 컵 TOP 6", "items": [person_obj(p) for p in c4]},
+        {"id": "card5", "title": "🌸 최연소·최대 컵 TOP 6", "items": [person_obj(p) for p in c5]},
+        {"id": "card6", "title": "✨ 최대 컵·연상 우선 TOP 6", "items": [person_obj(p) for p in c6]},
+        {"id": "card7", "title": "🔥 H컵 이상 · 155cm 이하 TOP 6", "items": [person_obj(p) for p in c7]},
+        {"id": "card8", "title": "📋 전체 인원 리스트", "items": [person_obj(v["p"], v.get("roles")) for v in c8]},
         {"id": "card9", "title": "🆓 가게별 프리 (120분 가격순)", "items": [shop_obj(s) for s in (b.get("shops_sorted") or [])]},
     ]
 

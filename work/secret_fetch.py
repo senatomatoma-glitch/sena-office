@@ -843,6 +843,10 @@ def build_tasks(cache):
             continue
         if shop.get('adapter') == 'brand' and shop.get('cast_url'):
             tasks.append(dict(kind='official_brand', shop=shop['key'], adapter='brand', url=shop['cast_url']))
+            # 공식 재적 목록이 20명씩 잘려 있을 때: /therapist/list_json/N (N = 2페이지 이후) 를 끝까지 수집
+            if shop.get('list_json_url'):
+                tasks.append(dict(kind='brand_list_json', shop=shop['key'],
+                                  url=shop['list_json_url'], pages_max=int(shop.get('list_json_pages') or 8)))
             if shop.get('schedule_url'):
                 tasks.append(dict(kind='brand_schedule', shop=shop['key'], url=shop['schedule_url']))
                 for n in (2, 3, 4):
@@ -880,6 +884,35 @@ def build_tasks(cache):
             tasks.append(dict(kind='official_schedule', shop=shop['key'], adapter='orenoie',
                               url='https://ore-no-ie.com/schedule.php'))
     return tasks
+
+
+def fetch_brand_list_json(t):
+    """브랜드 공식 재적 AJAX 목록(list_json)을 마지막 페이지까지 순차 수집.
+    응답 규약: /therapist/list_json/{n} 은 n+1번째 페이지(20명)를 점진 반환하고,
+    {page: n+1, is_last: 0|1} 을 함께 준다. 페이지별 카드 HTML을 pages 로 돌려준다."""
+    pages = []
+    t0 = time.time()
+    err = None
+    for n in range(1, int(t.get('pages_max') or 8) + 1):
+        url = t['url'].format(page=n)
+        r = http_get(url)
+        if r['status'] != 200:
+            err = r.get('error')
+            break
+        try:
+            data = json.loads(r['text'])
+        except Exception as e:
+            err = f'json {e}'
+            break
+        items = data.get('list') or []
+        if items:
+            pages.append(''.join(items))
+        if str(data.get('is_last')) == '1' or not items:
+            break
+    txt = json.dumps({'pages': pages}, ensure_ascii=False)
+    return dict(url=t['url'], method='json', status=200 if pages else 0, text=txt,
+                bytes=len(txt.encode('utf-8')), seconds=time.time() - t0,
+                error=None if pages else (err or 'empty'))
 
 
 def main():
@@ -923,7 +956,10 @@ def main():
     print(f'[secret_fetch] {len(tasks)} sources ({mode_tag}), workers={workers}')
 
     def run(t):
-        r = http_get(t['url'])
+        if t.get('kind') == 'brand_list_json':
+            r = fetch_brand_list_json(t)
+        else:
+            r = http_get(t['url'])
         r.update({k: v for k, v in t.items() if k != 'url'})
         return r
 
@@ -1029,9 +1065,36 @@ def main():
                 rec['official'].update({kk: vv for kk, vv in p.items() if vv is not None})
                 rec['sources'].append('brand')
                 rec['official_authoritative'] = True
+                if rec.get('order') is None and p.get('order') is not None:
+                    rec['order'] = p['order']
                 if not rec.get('name'):
                     rec['name'] = p['name']
             rep['parsed'] = len(ops)
+        elif k == 'brand_list_json':
+            host = re.sub(r'^https?://', '', r['url']).split('/')[0]
+            try:
+                pages = (json.loads(txt) or {}).get('pages') or []
+            except Exception:
+                pages = []
+            st = shop_status.setdefault(r['shop'], {})
+            total = 0
+            for pi, page_html in enumerate(pages):
+                ops = parse_brand_therapist(page_html, host)
+                for nm, p in ops.items():
+                    key = f"{r['shop']}|{nm}"
+                    rec = people.setdefault(key, dict(shop=r['shop'], name=p['name'], sources=[], today=None))
+                    rec.setdefault('official', {})
+                    rec['official'].update({kk: vv for kk, vv in p.items() if vv is not None})
+                    rec['sources'].append('brand')
+                    rec['official_authoritative'] = True
+                    if rec.get('order') is None and p.get('order') is not None:
+                        rec['order'] = 1000 * (pi + 1) + p['order']
+                    if not rec.get('name'):
+                        rec['name'] = p['name']
+                total += len(ops)
+            st['official'] = (st.get('official') or 0) + total
+            st['official_list_json'] = total
+            rep['parsed'] = total
         elif k == 'official':
             fn = OFFICIAL_PARSERS[r['adapter']]
             if r['adapter'] in NEW_ADAPTERS:
