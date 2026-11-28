@@ -237,11 +237,10 @@ def main():
     mon_out = monthly_state if isinstance(monthly_state, dict) else None
     if mon_out:
         mon_out = {k: mon_out.get(k) for k in ("v", "updated_at", "basis", "areas", "shops", "notes") if mon_out.get(k) is not None}
-    payload = json.dumps({
+    payload_obj = {
         "updated": now.strftime("%Y-%m-%d %H:%M JST"),
         "week_days": live.get("meta", {}).get("week_days") or [],
         "_wc": wc,
-        "_monthly_shops": mon_out,
         "counts": {
             "green": sum(1 for x in all_items if x["status"] == "🟢"),
             "yellow": sum(1 for x in all_items if x["status"] == "🟡"),
@@ -249,7 +248,10 @@ def main():
         },
         "cards": cards,
         "items": all_items,
-    }, ensure_ascii=False).encode("utf-8")
+    }
+    if mon_out:
+        payload_obj["_monthly_shops"] = mon_out
+    payload = json.dumps(payload_obj, ensure_ascii=False).encode("utf-8")
 
     salt = os.urandom(16)
     iv = os.urandom(12)
