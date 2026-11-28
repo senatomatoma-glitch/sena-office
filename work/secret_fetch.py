@@ -1199,6 +1199,10 @@ def main():
                 if not rec.get(f) and sp.get(f):
                     rec[f] = sp[f]
             rec['price_detail'] = sp.get('price_detail')
+            if sp.get('kakin') is not None:
+                rec['kakin'] = sp['kakin']
+                if sp.get('kakin_note'):
+                    rec['kakin_note'] = sp['kakin_note']
             rec['features'] = sp.get('features')
             rec['next_shift'] = sp.get('next_shift')
             rec['roles'] = sp.get('roles', [])
@@ -1222,6 +1226,7 @@ def main():
                    registered=True, seed=sp, image=sp.get('image'), img=sp.get('image'),
                    price_detail=sp.get('price_detail'), features=sp.get('features'),
                    next_shift=sp.get('next_shift'), roles=sp.get('roles', []),
+                   kakin=sp.get('kakin'), kakin_note=sp.get('kakin_note'),
                    today=None, sources=['seed'])
         sub = sp.get('sub_status') or ''
         if sub.startswith('오늘') and '~' in sub:

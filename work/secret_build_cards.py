@@ -176,12 +176,52 @@ def today_text(p):
     return "출근 미정"
 
 
+def kakin_of(p):
+    """등록 리스트 課金(엔) — 인원 레코드 또는 정적 시드(secret_cache.json)에서 가져온다."""
+    v = p.get('kakin')
+    if v is None:
+        v = (p.get('seed') or {}).get('kakin')
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def kakin_note_of(p):
+    v = p.get('kakin_note')
+    if v is None:
+        v = (p.get('seed') or {}).get('kakin_note')
+    return (v or '').strip()
+
+
+def kakin_short(p):
+    """예: '과금 15,000엔' / '과금 20,000엔(커피)' — 課金 없으면 ''."""
+    k = kakin_of(p)
+    if k <= 0:
+        return ''
+    n = kakin_note_of(p)
+    return f"과금 {k:,}엔" + (f"({n})" if n else '')
+
+
 def price_text(p):
     tot = p.get('price_total')
+    kakin = kakin_of(p)
     if not tot:
-        return "금액 확인 필요"
-    note = p.get('price_note') or ''
+        return "금액 확인 필요" + (f"({kakin_short(p)} 별도)" if kakin > 0 else "")
+    tot = tot + kakin
+    notes = [x for x in [(p.get('price_note') or '').strip(),
+                         (kakin_short(p) + ' 포함') if kakin > 0 else ''] if x]
+    note = ' · '.join(notes)
     return f"¥{tot:,}" + (f"({note})" if note else "")
+
+
+def price_detail_text(p, shop):
+    """금액 상세 — 코스·지명·교통비에 課金을 더해 보여준다."""
+    detail = p.get('price_detail') or (shop.get('price') or {}).get('detail') or ''
+    ks = kakin_short(p)
+    if ks:
+        detail = f"{detail} + {ks}" if detail else ks
+    return detail
 
 
 def fmt_role_lines(p, roles, shops):
@@ -223,7 +263,7 @@ def fmt_person(p, shops, roles=None, compact=False):
     cup_txt = f"{p['cup']}컵" if p.get('cup') else "컵 미공개"
     ht_txt = f"{p['height']}cm" if p.get('height') else "신장 미공개"
     age_txt = f"{p['age']}세" if p.get('age') else "나이 미공개"
-    detail = p.get('price_detail') or (shop.get('price') or {}).get('detail') or ''
+    detail = price_detail_text(p, shop)
     feats = p.get('features') or ' · '.join(p.get('tags') or []) or '-'
     url = p.get('url') or (p.get('seed') or {}).get('profile_url') or ''
     if os.path.exists(os.path.join(BASE, 'work/secret_official_urls.json')):
