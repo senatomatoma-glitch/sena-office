@@ -208,7 +208,7 @@
     <button class="tab-btn" onclick="showTab('briefing', this)">📰 브리핑</button>
     <button class="tab-btn" onclick="showTab('approval', this)">👑 승인 <span id="nav-app-cnt" style="background:#FF4D4F;color:#fff;border-radius:10px;padding:1px 5px;font-size:9px;display:none;">0</span></button>
     <button class="tab-btn" onclick="showTab('queue', this)">📋 접수큐</button>
-    <button class="tab-btn" onclick="showTab('meeting', this)">💬 회의</button>
+    <button class="tab-btn" onclick="showTab('meeting', this)">💬 라운지</button>
     <button class="tab-btn" onclick="showTab('status', this)">📊 부서</button>
     <button class="tab-btn" onclick="showTab('secret', this)">🤫 비밀</button>
   </nav>
@@ -280,7 +280,16 @@
     <div id="queue-list"></div>
   </div>
 
-  <div id="tab-meeting" class="section"><div id="opinions-list"></div></div>
+  <div id="tab-meeting" class="section">
+    <div class="banner" style="border-radius:14px;margin-bottom:12px;padding:12px 14px;">
+      <div class="banner-tag">☕ 팀 실시간 수다 · 아이디어 톡방</div>
+      <h2 style="font-size:15px;">MINT Office 라운지</h2>
+      <p style="font-size:11px;">세나 · 미향 · 미유 · 아카네 · 아이미가 자유롭게 잡담하고 아이디어를 던지는 공간이에요.</p>
+    </div>
+    <div id="lounge-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
+    <div class="subhead"><h3>📌 회의 · 의견 정리</h3></div>
+    <div id="opinions-list"></div>
+  </div>
   <div id="tab-status" class="section"><div class="member-grid" id="member-cards"></div></div>
   <div id="tab-secret" class="section">
     <div id="secret-lock" class="lock-box" style="margin:12px auto;">
@@ -347,7 +356,7 @@ async function unlock(autoPw) {
     document.getElementById('lock-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     document.getElementById('hdr-sub').innerText = `부서별 5실 · ${DATA.updated}`;
-    renderBriefing(); renderMapQueue(); renderMapBubbles(); renderApproval(); renderQueue(); renderOpinions(); renderMembers();
+    renderBriefing(); renderMapQueue(); renderMapBubbles(); renderApproval(); renderQueue(); renderLounge(); renderOpinions(); renderMembers();
   } catch (e) {
     localStorage.removeItem('sena_office_pin');
     document.getElementById('err-msg').innerText = '비밀번호가 맞지 않아!';
@@ -541,6 +550,32 @@ function renderQueue() {
     return true;
   });
   document.getElementById('queue-list').innerHTML = list.map(({t,i})=>ticketCardHtml(t,i)).join('') || '<p class="t-meta" style="text-align:center;padding:24px;">조건에 맞는 티켓이 없어.</p>';
+}
+function renderLounge() {
+  const el = document.getElementById('lounge-list');
+  if (!el) return;
+  const msgs = [...(DATA.lounge || [])].reverse();
+  if (!msgs.length) {
+    el.innerHTML = '<div class="card"><div class="t-meta">아직 올라온 잡담이 없어!</div></div>';
+    return;
+  }
+  const palette = {
+    '세나': { bg: '#FFF8E7', bd: '#FCD34D', badge: '👑 세나' },
+    '미향': { bg: '#EFF6FF', bd: '#93C5FD', badge: '💙 미향' },
+    '미유': { bg: '#ECFDF5', bd: '#6EE7B7', badge: '🌿 미유' },
+    '아카네': { bg: '#FFF1F2', bd: '#FDA4AF', badge: '🔑 아카네' },
+    '아이미': { bg: '#F5F3FF', bd: '#C4B5FD', badge: '📊 아이미' },
+  };
+  el.innerHTML = msgs.map(m => {
+    const p = palette[m.name] || { bg: 'var(--card)', bd: 'var(--border)', badge: esc(m.name||'-') };
+    return `<div style="background:${p.bg};border:1px solid ${p.bd};border-radius:14px;padding:10px 12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-size:12px;font-weight:800;">${p.badge} <span style="background:rgba(255,255,255,0.75);padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;margin-left:4px;">${esc(m.tag||'잡담')}</span></span>
+        <span style="font-size:10px;color:var(--muted);">${esc((m.time||'').slice(5, 16))}</span>
+      </div>
+      <div style="font-size:12.5px;line-height:1.5;white-space:pre-wrap;color:#1E293B;">${esc(m.text)}</div>
+    </div>`;
+  }).join('');
 }
 function renderOpinions() {
   document.getElementById('opinions-list').innerHTML = DATA.opinions.map(o => `<div class="card">

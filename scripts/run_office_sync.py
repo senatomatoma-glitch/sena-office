@@ -65,7 +65,7 @@ def fetch_range(token: str, a1_range: str) -> list:
         return json.loads(resp.read().decode("utf-8")).get("values", [])
 
 
-def build_payload(q_rows: list, o_rows: list, d_rows: list) -> dict:
+def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None) -> dict:
     h_idx = 0
     for idx, r in enumerate(q_rows):
         if any("상태" in str(c) for c in r) and any("티켓" in str(c) for c in r):
@@ -145,12 +145,24 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list) -> dict:
                 "body": o.get("conclusion") or o.get("mihyang") or o.get("miyu") or o.get("aimi") or "",
             })
 
+    lounge = []
+    for r in (l_rows or [])[1:]:
+        if len(r) < 4 or not str(r[3]).strip():
+            continue
+        lounge.append({
+            "time": r[0] if len(r) > 0 else "",
+            "name": r[1] if len(r) > 1 else "",
+            "tag": r[2] if len(r) > 2 else "잡담",
+            "text": r[3] if len(r) > 3 else "",
+        })
+
     return {
         "updated": datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),
         "tickets": tickets,
         "opinions": list(reversed(opinions[-12:])),
         "done_recent": list(reversed(done_recent[-15:])),
         "ceo_briefings": list(reversed(ceo_briefings[-7:])),
+        "lounge": lounge[-40:],
     }
 
 
@@ -249,11 +261,15 @@ def main():
     q_rows = fetch_range(token, "접수 큐!A5:Q80")
     o_rows = fetch_range(token, "의견 정리!A1:G80")
     d_rows = fetch_range(token, "완료 보관!A1:R250")
+    try:
+        l_rows = fetch_range(token, "💬 라운지!A1:D150")
+    except Exception:
+        l_rows = []
 
-    payload = build_payload(q_rows, o_rows, d_rows)
+    payload = build_payload(q_rows, o_rows, d_rows, l_rows)
     core_hash = hashlib.sha256(
         json.dumps(
-            {"tickets": payload["tickets"], "opinions": payload["opinions"], "done_recent": payload["done_recent"]},
+            {"tickets": payload["tickets"], "opinions": payload["opinions"], "done_recent": payload["done_recent"], "lounge": payload["lounge"]},
             ensure_ascii=False,
             sort_keys=True,
         ).encode("utf-8")
