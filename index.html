@@ -486,10 +486,15 @@ function ticketCardHtml(t, idx) {
   </div>`;
 }
 function ticketSortRank(t) {
-  if (t.status === '결정 필요') return 0;
-  if (t.priority === '긴급') return 1;
-  const ord = { '접수': 2, '실행 중': 3, '검증 중': 4, '보류': 5, '완료': 6 };
-  return ord[t.status] !== undefined ? ord[t.status] : 7;
+  const typeRank = (t.type === '상시') ? 0 : 100;
+  let stRank = 7;
+  if (t.status === '결정 필요') stRank = 0;
+  else if (t.priority === '긴급') stRank = 1;
+  else {
+    const ord = { '접수': 2, '실행 중': 3, '검증 중': 4, '보류': 5, '완료': 6 };
+    stRank = ord[t.status] !== undefined ? ord[t.status] : 7;
+  }
+  return typeRank + stRank;
 }
 function renderMapQueue() {
   const doneInQ = DATA.tickets.filter(t => t.status === '완료').length;
