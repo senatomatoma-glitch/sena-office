@@ -136,7 +136,8 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list) -> dict:
 
     ceo_briefings = []
     for o in opinions:
-        if "CEO" in (o.get("topic") or "").upper() or "브리핑" in (o.get("topic") or ""):
+        topic = (o.get("topic") or "")
+        if "CEO 브리핑" in topic or topic.startswith("[CEO 브리핑]"):
             ceo_briefings.append({
                 "date": o.get("date", ""),
                 "title": o.get("topic", ""),
