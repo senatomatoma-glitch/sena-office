@@ -99,11 +99,14 @@
   .head-bubble {
     position: absolute; transform: translate(-50%, -50%);
     background: rgba(255,255,255,0.96); border: 1.5px solid #C97A40;
-    border-radius: 10px; padding: 2px 7px; font-size: 9.5px; font-weight: 800;
+    border-radius: 10px; padding: 3px 7px; font-size: 9px; font-weight: 800;
     color: #5C3A21; box-shadow: 0 2px 8px rgba(0,0,0,.18);
     cursor: pointer; white-space: nowrap; z-index: 3;
     animation: floatBob 3.2s ease-in-out infinite;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
   }
+  .stress-track { width: 52px; height: 4px; background: #E2E8F0; border-radius: 99px; overflow: hidden; }
+  .stress-fill { height: 100%; border-radius: 99px; transition: width 0.4s ease; }
   @keyframes floatBob {
     0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
     50% { transform: translate(-50%, -50%) translateY(-3px); }
@@ -639,23 +642,27 @@ function renderMapBubbles() {
   const appCnt = DATA.tickets.filter(t => isNeedApproval(t)).length;
   const bossEl = document.getElementById('hb-세나');
   if (bossEl) bossEl.innerText = appCnt > 0 ? `👑 대표승인 ${appCnt}건` : '👑 대기 0건';
+  const msMap = DATA.mood_stress || {};
   ['미향', '미유', '아카네', '아이미'].forEach(name => {
     const el = document.getElementById('hb-' + name);
     if (!el) return;
     const run = DATA.tickets.filter(t => t.owner === name && t.status === '실행 중');
     const ver = DATA.tickets.filter(t => t.verifier === name && t.status === '검증 중');
     const pool = run.length ? run : ver;
-    const tag = run.length ? '💬' : (ver.length ? '🔍' : '☕');
-    if (!pool.length) {
-      el.innerText = `${tag} 대기중`;
-      return;
+    const ms = msMap[name] || { stress: 25, mood: 80, emoji: '😊', fx: '✨' };
+    const bonus = (window._coffeeRelief || {})[name] || 0;
+    const st = Math.max(5, ms.stress - bonus);
+    const barColor = st >= 70 ? '#EF4444' : (st >= 45 ? '#F59E0B' : '#10B981');
+    const tag = run.length ? ms.fx : (ver.length ? '🔍' : '☕');
+    let tLabel = '대기중';
+    if (pool.length) {
+      const sorted = [...pool].sort((a,b) => ((a.type==='단발'?0:1) - (b.type==='단발'?0:1)));
+      const ids = sorted.map(t => (t.ticket || '').trim()).filter(Boolean);
+      if (ids.length === 1) tLabel = ids[0];
+      else if (ids.length > 1) tLabel = `${ids[0]} 외${ids.length - 1}`;
+      else tLabel = `${pool.length}건`;
     }
-    const sorted = [...pool].sort((a,b) => ((a.type==='단발'?0:1) - (b.type==='단발'?0:1)));
-    const ids = sorted.map(t => (t.ticket || '').trim()).filter(Boolean);
-    if (ids.length === 1) el.innerText = `${tag} ${ids[0]}`;
-    else if (ids.length === 2) el.innerText = `${tag} ${ids[0]}·${ids[1].replace('T-','')}`;
-    else if (ids.length > 2) el.innerText = `${tag} ${ids[0]} 외 ${ids.length - 1}`;
-    else el.innerText = `${tag} ${pool.length}건`;
+    el.innerHTML = `<span>${ms.emoji} ${tag}${tLabel} · ${st}%</span><div class="stress-track"><div class="stress-fill" style="width:${st}%;background:${barColor};"></div></div>`;
   });
 }
 function isNeedApproval(t) {

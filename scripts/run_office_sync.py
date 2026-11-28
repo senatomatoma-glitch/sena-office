@@ -169,6 +169,44 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None)
                 airbnb_monthly = rows[:3]
                 break
 
+    # Compute mood & stress per member from queue workload + lounge posts
+    now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
+    today_prefix = datetime.now(JST).strftime("%Y-%m-%d")
+    mood_stress = {}
+    for m_name in ["미향", "미유", "아카네", "아이미"]:
+        run_c = sum(1 for t in tickets if t.get("owner") == m_name and t.get("status") == "실행 중")
+        ver_c = sum(1 for t in tickets if t.get("verifier") == m_name and t.get("status") == "검증 중")
+        over_c = sum(
+            1 for t in tickets
+            if t.get("owner") == m_name and t.get("status") in ("실행 중", "접수")
+            and t.get("deadline") and str(t.get("deadline")).strip() < now_str
+        )
+        lounge_today = [l for l in lounge if l.get("name") == m_name and str(l.get("time", "")).startswith(today_prefix)]
+        stress = 12 + run_c * 4 + ver_c * 3 + over_c * 9 - min(len(lounge_today) * 6, 18)
+        mood = 82 - over_c * 6 + min(len(lounge_today) * 5, 15)
+        if lounge_today:
+            last_txt = lounge_today[-1].get("text", "")
+            m_s = re.search(r"스트레스\s*[:：]?\s*(\d{1,3})", last_txt)
+            m_m = re.search(r"기분\s*[:：]?\s*(\d{1,3})", last_txt)
+            if m_s:
+                stress = int(m_s.group(1))
+            if m_m:
+                mood = int(m_m.group(1))
+        stress = max(5, min(98, stress))
+        mood = max(10, min(100, mood))
+        if stress >= 70:
+            emoji, fx = "😫", "💢"
+        elif stress >= 45:
+            emoji, fx = "😅", "💦"
+        elif mood >= 80:
+            emoji, fx = "🤩", "✨"
+        else:
+            emoji, fx = "😊", "☕"
+        mood_stress[m_name] = {
+            "stress": stress, "mood": mood, "emoji": emoji, "fx": fx,
+            "run": run_c, "over": over_c, "lounge_cnt": len(lounge_today),
+        }
+
     return {
         "updated": datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),
         "tickets": tickets,
@@ -178,6 +216,7 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None)
         "ceo_briefings": list(reversed(ceo_briefings[-7:])),
         "lounge": lounge[-40:],
         "airbnb_monthly": airbnb_monthly,
+        "mood_stress": mood_stress,
     }
 
 
