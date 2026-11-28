@@ -15,6 +15,14 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 JST = timezone(timedelta(hours=9))
 SHEET_ID = "1SeFUu817K96pCsE09HBarA3hZvBmfAj7-ctClxrGkrE"
+CLEAN_SHEET_ID = "1Il9HtzngOYvzyrxZjNh_YpQbgZnfFFV9-GUnAzJP-Ic"
+MINT_SHEET_ID = "15lJkLS9j1SSLfpUUNmgSrEA0iWLIjUMDLnlAXzCV9Ys"
+CLEAN_TABS = [
+    {"tab": "shiwa", "start": 98, "end": 3100},
+    {"tab": "safe", "start": 2, "end": 1018},
+    {"tab": "OOKINI", "start": 2, "end": 1002},
+]
+KOR_DOW = ["월", "화", "수", "목", "금", "토", "일"]
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INDEX_HTML = os.path.join(REPO_DIR, "index.html")
 HASH_FILE = os.path.join(REPO_DIR, ".office_sync_hash")
@@ -55,9 +63,9 @@ def get_google_token(sa_info: dict) -> str:
         return json.loads(resp.read().decode("utf-8"))["access_token"]
 
 
-def fetch_range(token: str, a1_range: str) -> list:
+def fetch_range(token: str, a1_range: str, sheet_id: str = SHEET_ID) -> list:
     url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/"
+        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/"
         + urllib.parse.quote(a1_range, safe="!:")
     )
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
@@ -65,7 +73,131 @@ def fetch_range(token: str, a1_range: str) -> list:
         return json.loads(resp.read().decode("utf-8")).get("values", [])
 
 
-def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None) -> dict:
+def norm_date(value) -> str:
+    """'2026. 11. 28' 같은 표기를 'YYYY-MM-DD'로 맞춘다."""
+    m = re.match(r"^(\d{4})\D{1,2}(\d{1,2})\D{1,2}(\d{1,2})", str(value or "").strip())
+    if not m:
+        return None
+    try:
+        return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def clean_name(value) -> str:
+    s = re.sub(r"\([^)]*\)|（[^）]*）", "", str(value or ""))
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def clean_room(value) -> str:
+    """호실명은 괄호 표기(1201(Two room) 등)를 살린다."""
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def build_roster(token: str, dates: list) -> dict:
+    """MINT 탭: 날짜별 스태프 배정 상태(All assigned / Holiday). 읽기 전용."""
+    out = {d: [] for d in dates}
+    try:
+        rows = fetch_range(token, "MINT!A1:HC30", MINT_SHEET_ID)
+    except Exception as e:
+        print("MINT_ERR", e)
+        return out
+    if len(rows) < 4:
+        return out
+    header = rows[0]
+    col_of = {}
+    for idx, cell in enumerate(header):
+        d = norm_date(cell)
+        if d in out:
+            col_of[d] = idx
+    for d, ci in col_of.items():
+        entries = []
+        for r in rows[3:]:
+            if not (r and str(r[0]).strip()):
+                continue
+            status = str(r[ci]).strip() if len(r) > ci else ""
+            entries.append({"name": clean_name(r[0]), "status": status})
+        out[d] = entries
+    return out
+
+
+def build_cleaning(token: str, today: str, tomorrow: str) -> dict:
+    """오늘·내일 청소 배정(호실·담당)과 스태프별 방 수. 시트는 읽기만 한다."""
+    targets = [today, tomorrow]
+    days = []
+    for d in targets:
+        days.append({
+            "date": d,
+            "label": "오늘" if d == today else "내일",
+            "dow": KOR_DOW[datetime.strptime(d, "%Y-%m-%d").weekday()],
+            "total": 0,
+            "staff": [],
+            "off": [],
+            "sources": [],
+        })
+    seen = set()
+    for cfg in CLEAN_TABS:
+        tab = cfg["tab"]
+        try:
+            date_rows = fetch_range(token, f"{tab}!B{cfg['start']}:B{cfg['end']}", CLEAN_SHEET_ID)
+        except Exception as e:
+            print("CLEAN_DATES_ERR", tab, e)
+            try:
+                date_rows = fetch_range(token, f"{tab}!B:B", CLEAN_SHEET_ID)[cfg["start"] - 1:]
+            except Exception as e2:
+                print("CLEAN_DATES_ERR2", tab, e2)
+                continue
+        hits = [cfg["start"] + i for i, r in enumerate(date_rows) if r and norm_date(r[0]) in targets]
+        if not hits:
+            continue
+        lo, hi = min(hits), max(hits)
+        try:
+            block = fetch_range(token, f"{tab}!A{lo}:Q{hi}", CLEAN_SHEET_ID)
+        except Exception as e:
+            print("CLEAN_BLOCK_ERR", tab, e)
+            continue
+        added = {d: 0 for d in targets}
+        for r in block:
+            if len(r) < 4:
+                continue
+            nd = norm_date(r[1])
+            if nd not in added:
+                continue
+            room = clean_room(r[2])
+            staff = clean_name(r[3])
+            if not room or not staff:
+                continue
+            key = (nd, room, staff)
+            if key in seen:
+                continue
+            seen.add(key)
+            added[nd] += 1
+            day = days[targets.index(nd)]
+            entry = next((s for s in day["staff"] if s["name"] == staff), None)
+            if entry is None:
+                entry = {"name": staff, "count": 0, "rooms": [], "status": "", "warn": False}
+                day["staff"].append(entry)
+            entry["rooms"].append(room)
+            entry["count"] = len(entry["rooms"])
+        for d in targets:
+            if added[d]:
+                days[targets.index(d)]["sources"].append({"tab": tab, "rooms": added[d]})
+
+    roster = build_roster(token, targets)
+    for day in days:
+        entries = roster.get(day["date"]) or []
+        status_of = {e["name"]: e["status"] for e in entries}
+        day["off"] = [e["name"] for e in entries if "holiday" in (e["status"] or "").lower()]
+        for s in day["staff"]:
+            s["status"] = status_of.get(s["name"], "")
+            s["warn"] = "holiday" in (s["status"] or "").lower()
+        day["staff"].sort(key=lambda x: (-x["count"], x["name"]))
+        day["total"] = sum(s["count"] for s in day["staff"])
+
+    return {"generated": datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"), "days": days}
+
+
+def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None, cleaning: dict = None) -> dict:
     h_idx = 0
     for idx, r in enumerate(q_rows):
         if any("상태" in str(c) for c in r) and any("티켓" in str(c) for c in r):
@@ -217,6 +349,7 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None)
         "lounge": lounge[-40:],
         "airbnb_monthly": airbnb_monthly,
         "mood_stress": mood_stress,
+        "cleaning": cleaning or {"days": []},
     }
 
 
@@ -320,10 +453,17 @@ def main():
     except Exception:
         l_rows = []
 
-    payload = build_payload(q_rows, o_rows, d_rows, l_rows)
+    now_jst = datetime.now(JST)
+    try:
+        cleaning = build_cleaning(token, now_jst.strftime("%Y-%m-%d"), (now_jst + timedelta(days=1)).strftime("%Y-%m-%d"))
+    except Exception as e:
+        print("CLEANING_ERR", e)
+        cleaning = {"error": str(e)[:200], "days": []}
+
+    payload = build_payload(q_rows, o_rows, d_rows, l_rows, cleaning)
     core_hash = hashlib.sha256(
         json.dumps(
-            {"tickets": payload["tickets"], "opinions": payload["opinions"], "done_recent": payload["done_recent"], "lounge": payload["lounge"]},
+            {"tickets": payload["tickets"], "opinions": payload["opinions"], "done_recent": payload["done_recent"], "lounge": payload["lounge"], "cleaning": payload["cleaning"]},
             ensure_ascii=False,
             sort_keys=True,
         ).encode("utf-8")
