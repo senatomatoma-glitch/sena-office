@@ -849,18 +849,22 @@ function loungeParseTs(t) {
   if (!m) return 0;
   return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
 }
-function loungeShortTitle(t) {
+function loungeShortTitle(t, max) {
   let s = String((t && t.title) || '').replace(/^(?:\[[^\]]+\]\s*)+/, '').replace(/\s+/g, ' ').trim();
   if (!s) return '';
-  if (s.length > 18) {
-    s = s.slice(0, 18).replace(/[\s(\[（「【<·,:：\-–—]+$/, '');
-    s += '…';
+  const lim = max || 18;
+  if (s.length > lim) {
+    let cut = s.slice(0, lim);
+    const sp = cut.lastIndexOf(' ');
+    if (sp >= Math.floor(lim * 0.55)) cut = cut.slice(0, sp);
+    cut = cut.replace(/[\s(\[（「【<·,:：\-–—]+$/, '');
+    s = cut + '…';
   }
   return s;
 }
-function loungeTicketLabel(t) {
+function loungeTicketLabel(t, max) {
   const tk = String((t && t.ticket) || '').trim() || '티켓';
-  const ti = loungeShortTitle(t);
+  const ti = loungeShortTitle(t, max);
   return ti ? `${tk} ${ti}` : tk;
 }
 function loungePick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -875,8 +879,8 @@ function buildLiveLoungeLine(who) {
   let subj;
   if (run.length && ver.length) {
     subj = loungePick([
-      `${loungeTicketLabel(run[0])} 실행하면서 ${loungeTicketLabel(ver[0])} 검증도 같이 보는 중이야`,
-      `${loungeTicketLabel(run[0])} 마무리하고 ${loungeTicketLabel(ver[0])} 확인하러 잠깐 들렀어`,
+      `${loungeTicketLabel(run[0], 13)} 실행하면서 ${loungeTicketLabel(ver[0], 13)} 검증도 같이 보는 중이야`,
+      `${loungeTicketLabel(run[0], 13)} 마무리하고 ${loungeTicketLabel(ver[0], 13)} 확인하러 잠깐 들렀어`,
     ]);
   } else if (run.length) {
     subj = loungePick([
