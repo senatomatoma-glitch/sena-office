@@ -109,42 +109,45 @@
     50% { transform: translate(-50%, -50%) translateY(-3px); }
   }
   .walker {
-    position: absolute; transform: translate(-50%, -92%);
+    position: absolute; transform: translate(-50%, -95%);
     z-index: 5; pointer-events: auto; cursor: pointer;
-    height: 9.5%;
-    transition: left 1.8s cubic-bezier(.45,.05,.55,.95), top 1.8s cubic-bezier(.45,.05,.55,.95), opacity 0.25s ease;
+    width: 36px; height: 50px;
+    transition: left 2.0s linear, top 2.0s linear, opacity 0.25s ease;
     display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
   }
-  .walker-img {
-    height: 100%; width: auto; display: block;
-    filter: drop-shadow(0 4px 5px rgba(0,0,0,0.28));
-    transform-origin: bottom center;
-    animation: idleBreath 2.4s ease-in-out infinite;
-    transition: transform 0.25s ease;
+  .chibi-svg { width: 34px; height: 46px; overflow: visible; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.25)); }
+  .walker.flip .chibi-svg { transform: scaleX(-1); }
+  .walker .arm-l, .walker .arm-r, .walker .leg-l, .walker .leg-r, .walker .head-grp {
+    transform-box: fill-box; transition: transform 0.2s ease;
   }
-  .walker.flip .walker-img { transform: scaleX(-1); }
-  .walker.walking .walker-img { animation: walkStep 0.36s ease-in-out infinite; }
-  .walker.flip.walking .walker-img { animation: walkStepFlip 0.36s ease-in-out infinite; }
-  .walker.sipping .walker-img { animation: sipBob 1.1s ease-in-out infinite; }
-  .walker-drink { position: absolute; right: -10px; top: 34%; font-size: 13px; display: none; filter: drop-shadow(0 2px 3px rgba(0,0,0,.2)); }
-  .walker.sipping .walker-drink { display: block; }
-  @keyframes idleBreath {
-    0%, 100% { transform: translateY(0px) scaleY(1); }
-    50% { transform: translateY(-1.5px) scaleY(1.02); }
-  }
-  @keyframes walkStep {
-    0%, 100% { transform: translateY(0px) rotate(-4deg); }
-    50% { transform: translateY(-4px) rotate(4deg); }
-  }
-  @keyframes walkStepFlip {
-    0%, 100% { transform: scaleX(-1) translateY(0px) rotate(-4deg); }
-    50% { transform: scaleX(-1) translateY(-4px) rotate(4deg); }
-  }
-  @keyframes sipBob {
-    0%, 100% { transform: translateY(0px) rotate(0deg); }
-    40% { transform: translateY(-2px) rotate(-6deg); }
-    70% { transform: translateY(-1px) rotate(3deg); }
-  }
+  .walker .arm-l, .walker .arm-r { transform-origin: 50% 10%; }
+  .walker .leg-l, .walker .leg-r { transform-origin: 50% 0%; }
+  .walker .head-grp { transform-origin: 50% 85%; }
+  .walker .cup-prop { opacity: 0; transition: opacity 0.2s; }
+  /* Idle / sitting at desk */
+  .walker.sitting .leg-l, .walker.sitting .leg-r { transform: rotate(-55deg) translateY(-2px); }
+  .walker.sitting .arm-l { animation: typeArmL 0.45s ease-in-out infinite alternate; }
+  .walker.sitting .arm-r { animation: typeArmR 0.45s ease-in-out infinite alternate; }
+  .walker.sitting .head-grp { animation: idleNod 2.4s ease-in-out infinite; }
+  /* Walking cycle: real alternating arms & legs */
+  .walker.walking .chibi-svg { animation: bodyStride 0.44s ease-in-out infinite; }
+  .walker.walking .leg-l { animation: swingFwd 0.44s ease-in-out infinite alternate; }
+  .walker.walking .leg-r { animation: swingBwd 0.44s ease-in-out infinite alternate; }
+  .walker.walking .arm-l { animation: swingBwd 0.44s ease-in-out infinite alternate; }
+  .walker.walking .arm-r { animation: swingFwd 0.44s ease-in-out infinite alternate; }
+  /* Sipping coffee in lounge */
+  .walker.sipping .leg-l, .walker.sipping .leg-r { transform: rotate(-45deg) translateY(-2px); }
+  .walker.sipping .arm-r { animation: sipArm 1.4s ease-in-out infinite; }
+  .walker.sipping .head-grp { animation: sipHead 1.4s ease-in-out infinite; }
+  .walker.sipping .cup-prop { opacity: 1; }
+  @keyframes swingFwd { 0% { transform: rotate(-28deg); } 100% { transform: rotate(28deg); } }
+  @keyframes swingBwd { 0% { transform: rotate(28deg); } 100% { transform: rotate(-28deg); } }
+  @keyframes bodyStride { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-2.5px); } }
+  @keyframes typeArmL { 0% { transform: rotate(-18deg); } 100% { transform: rotate(-34deg); } }
+  @keyframes typeArmR { 0% { transform: rotate(-34deg); } 100% { transform: rotate(-18deg); } }
+  @keyframes idleNod { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(3deg); } }
+  @keyframes sipArm { 0%, 100% { transform: rotate(-25deg); } 50% { transform: rotate(-85deg); } }
+  @keyframes sipHead { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-6deg); } }
   .sky-fx { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; border-radius: 20px; }
   .rain-drop { position: absolute; width: 1.5px; height: 14px; background: linear-gradient(transparent, rgba(125,211,252,0.75)); animation: rainFall 0.9s linear infinite; }
   @keyframes rainFall { 0% { transform: translateY(-20px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(420px); opacity: 0; } }
@@ -564,45 +567,81 @@ function openConf() {
   document.getElementById('subtab-q-btn').classList.remove('active');
 }
 let liveTimer = null;
+function chibiSvg(n) {
+  const cfg = {
+    '세나': { hair:'#1F2937', top:'#86EFAC', pants:'#1E293B', crown:true, glasses:true, hairBack:'none', pin:'' },
+    '미향': { hair:'#64748B', top:'#60A5FA', pants:'#F8FAFC', hairBack:'wave', pin:'<circle cx="24" cy="12" r="2" fill="#F97316"/>', glasses:false },
+    '미유': { hair:'#F472B6', top:'#6EE7B7', pants:'#E7E5E4', hairBack:'wave', pin:'<rect x="22" y="10" width="5" height="3" rx="1" fill="#34D399"/>', glasses:false },
+    '아카네': { hair:'#78350F', top:'#334155', pants:'#2563EB', hairBack:'bob', pin:'<circle cx="25" cy="14" r="1.8" fill="#EF4444"/>', scarf:'#FEF3C7', glasses:false },
+    '아이미': { hair:'#8B5CF6', top:'#7C3AED', pants:'#1E293B', hairBack:'pony', pin:'<rect x="23" y="11" width="4" height="1.5" fill="#E2E8F0"/>', glasses:true },
+  }[n];
+  const backHair = cfg.hairBack === 'wave' ? `<path d="M9 14 Q6 24 9 32 L27 32 Q30 24 27 14 Z" fill="${cfg.hair}"/>` :
+                   cfg.hairBack === 'bob'  ? `<path d="M9 13 Q7 22 10 26 L26 26 Q29 22 27 13 Z" fill="${cfg.hair}"/>` :
+                   cfg.hairBack === 'pony' ? `<path d="M6 12 Q2 18 5 26 Q9 22 10 14 Z" fill="${cfg.hair}"/>` : '';
+  const crown = cfg.crown ? `<polygon points="10,7 12,1 16,5 18,0 20,5 24,1 26,7" fill="#FBBF24" stroke="#B45309" stroke-width="0.8"/>` : '';
+  const glasses = cfg.glasses ? `<circle cx="15" cy="17" r="3" fill="none" stroke="#94A3B8" stroke-width="1"/><circle cx="22" cy="17" r="3" fill="none" stroke="#94A3B8" stroke-width="1"/><line x1="18" y1="17" x2="19" y2="17" stroke="#94A3B8" stroke-width="1"/>` : '';
+  const scarf = cfg.scarf ? `<rect x="13" y="23" width="10" height="3.5" rx="1.5" fill="${cfg.scarf}"/>` : '';
+  return `<svg class="chibi-svg" viewBox="0 0 36 48">
+    <ellipse cx="18" cy="45" rx="8" ry="2.2" fill="rgba(0,0,0,0.18)"/>
+    <g class="leg-l"><rect x="13" y="34" width="4" height="10" rx="2" fill="${cfg.pants}"/><rect x="12.5" y="42" width="5" height="3" rx="1.5" fill="#F8FAFC"/></g>
+    <g class="leg-r"><rect x="19" y="34" width="4" height="10" rx="2" fill="${cfg.pants}"/><rect x="18.5" y="42" width="5" height="3" rx="1.5" fill="#F8FAFC"/></g>
+    <g class="arm-l"><rect x="9" y="25" width="3.5" height="9" rx="1.7" fill="${cfg.top}"/><circle cx="10.7" cy="34.5" r="1.8" fill="#FDE68A"/></g>
+    <rect x="12.5" y="24" width="11" height="11.5" rx="3.5" fill="${cfg.top}"/>
+    ${scarf}
+    <g class="arm-r">
+      <rect x="23.5" y="25" width="3.5" height="9" rx="1.7" fill="${cfg.top}"/>
+      <circle cx="25.2" cy="34.5" r="1.8" fill="#FDE68A"/>
+      <g class="cup-prop"><rect x="24" y="31" width="4" height="4.5" rx="1" fill="#78350F"/><rect x="24" y="30.5" width="4" height="1" fill="#FFF"/></g>
+    </g>
+    <g class="head-grp">
+      ${backHair}
+      <circle cx="18" cy="16" r="8.5" fill="#FDE68A"/>
+      <path d="M9.5 15 Q11 6 18 7 Q25 6 26.5 15 Q22 10 18 11 Q14 10 9.5 15 Z" fill="${cfg.hair}"/>
+      ${crown}${cfg.pin}
+      <circle cx="15" cy="17" r="1.3" fill="#1E293B"/><circle cx="22" cy="17" r="1.3" fill="#1E293B"/>
+      <circle cx="13" cy="19.5" r="1.3" fill="#FDA4AF" opacity="0.6"/><circle cx="24" cy="19.5" r="1.3" fill="#FDA4AF" opacity="0.6"/>
+      <path d="M16.5 20.5 Q18.5 22 20.5 20.5" fill="none" stroke="#B45309" stroke-width="1" stroke-linecap="round"/>
+      ${glasses}
+    </g>
+  </svg>`;
+}
 function startLiveOffice() {
   const layer = document.getElementById('live-walkers');
   if (!layer) return;
   const homes = {
-    '세나': { x: 20, y: 23, floor: 3, sprite: 'sprites/sena.png', boss: true, say: ['오늘도 화이팅!', '다들 잘 돌아가나~', '커피 한 잔 할까'] },
-    '미향': { x: 22, y: 46, floor: 2, sprite: 'sprites/mihyang.png', say: ['오늘도 화이팅!', '접수 큐 체크 중~', '대표님 보고 가야지'] },
-    '미유': { x: 80, y: 46, floor: 2, sprite: 'sprites/miyu.png', say: ['블로그 초안 쓰는 중', 'GA4 체크!', '아아 한 잔~'] },
-    '아카네': { x: 22, y: 69, floor: 1, sprite: 'sprites/akane.png', say: ['체크인 확인!', '메일함 이상 무', '게스트 후기 5점~'] },
-    '아이미': { x: 80, y: 69, floor: 1, sprite: 'sprites/aimi.png', say: ['수익화 분석 중', '교차검증 완료!', 'SEO 체크~'] },
+    '세나': { x: 20, y: 22, floor: 3, boss: true, say: ['오늘도 화이팅!', '다들 잘 돌아가나~', '커피 한 잔 할까'] },
+    '미향': { x: 22, y: 45, floor: 2, say: ['오늘도 화이팅!', '접수 큐 체크 중~', '대표님 보고 가야지'] },
+    '미유': { x: 80, y: 45, floor: 2, say: ['블로그 초안 쓰는 중', 'GA4 체크!', '아아 한 잔~'] },
+    '아카네': { x: 22, y: 68, floor: 1, say: ['체크인 확인!', '메일함 이상 무', '게스트 후기 5점~'] },
+    '아이미': { x: 80, y: 68, floor: 1, say: ['수익화 분석 중', '교차검증 완료!', 'SEO 체크~'] },
   };
-  const doorY = { 3: 23, 2: 46, 1: 69, 0: 92 };
+  const doorY = { 3: 22, 2: 45, 1: 68, 0: 91 };
   const spots = [
-    { name: '라운지', x: 61, y: 23, floor: 3, lines: ['☕ 라운지 휴식 중', '🍰 마카롱 꿀맛!', '💡 새 아이디어 떠올랐다!', '🌿 잠깐 쉬어가자~'] },
-    { name: '대표실', x: 38, y: 23, floor: 3, lines: ['👑 대표님 보고 중!', '✨ 잘 진행되고 있어요', '📋 확인 부탁드려요!'] },
-    { name: '대회의실', x: 50, y: 92, floor: 0, lines: ['🤝 지하 대회의실 회의 중!', '📊 주간 전략 맞추는 중', '💡 다 같이 아이디어 회의!'] },
-    { name: '미향방', x: 38, y: 46, floor: 2, lines: ['💬 미향아 잠깐만!', '🙌 오늘도 고생해!'] },
-    { name: '미유방', x: 62, y: 46, floor: 2, lines: ['🌿 미유야 글 잘 써져?', '📸 사진 예쁘다!'] },
-    { name: '아카네방', x: 38, y: 69, floor: 1, lines: ['🔑 아카네 예약 어때?', '📬 메일 확인 중?'] },
-    { name: '아이미방', x: 62, y: 69, floor: 1, lines: ['📊 아이미 숫자 어때?', '💡 전략 회의하자!'] },
+    { name: '라운지', x: 64, y: 22, floor: 3, lines: ['☕ 라운지 휴식 중', '🍰 마카롱 꿀맛!', '💡 새 아이디어 떠올랐다!', '🌿 잠깐 쉬어가자~'] },
+    { name: '대표실', x: 38, y: 22, floor: 3, lines: ['👑 대표님 보고 중!', '✨ 잘 진행되고 있어요', '📋 확인 부탁드려요!'] },
+    { name: '대회의실', x: 50, y: 91, floor: 0, lines: ['🤝 지하 대회의실 회의 중!', '📊 주간 전략 맞추는 중', '💡 다 같이 아이디어 회의!'] },
+    { name: '미향방', x: 38, y: 45, floor: 2, lines: ['💬 미향아 잠깐만!', '🙌 오늘도 고생해!'] },
+    { name: '미유방', x: 62, y: 45, floor: 2, lines: ['🌿 미유야 글 잘 써져?', '📸 사진 예쁘다!'] },
+    { name: '아카네방', x: 38, y: 68, floor: 1, lines: ['🔑 아카네 예약 어때?', '📬 메일 확인 중?'] },
+    { name: '아이미방', x: 62, y: 68, floor: 1, lines: ['📊 아이미 숫자 어때?', '💡 전략 회의하자!'] },
   ];
   const state = {};
   layer.innerHTML = Object.entries(homes).map(([n, h]) => {
     state[n] = { x: h.x, y: h.y, floor: h.floor, busy: false };
     const clickFn = h.boss ? 'openBoss()' : `openMember('${n}')`;
-    return `<div class="walker" id="wk-${n}" style="left:${h.x}%;top:${h.y}%;" onclick="${clickFn}">
+    return `<div class="walker sitting" id="wk-${n}" style="left:${h.x}%;top:${h.y}%;" onclick="${clickFn}">
       <div class="walker-say" id="wks-${n}"></div>
-      <div class="walker-drink" id="wkd-${n}">☕</div>
-      <img class="walker-img" src="${h.sprite}?v=1" alt="${n}">
+      ${chibiSvg(n)}
     </div>`;
   }).join('');
 
   if (liveTimer) clearInterval(liveTimer);
   const names = Object.keys(homes);
-  const drinks = ['☕', '🧋', '🍵', '🥤'];
-  const moveTo = (who, tx, ty, tf, line, isLounge) => {
-    const st = state[who], el = document.getElementById('wk-' + who), sayEl = document.getElementById('wks-' + who), drEl = document.getElementById('wkd-' + who);
+  const moveTo = (who, tx, ty, tf, line, mode) => {
+    const st = state[who], el = document.getElementById('wk-' + who), sayEl = document.getElementById('wks-' + who);
     if (!st || !el || st.busy) return;
     st.busy = true;
-    el.classList.remove('sipping');
+    el.classList.remove('sipping', 'sitting');
     el.classList.add('walking');
     if (tx < st.x) el.classList.add('flip'); else el.classList.remove('flip');
 
@@ -614,18 +653,15 @@ function startLiveOffice() {
       if (sayEl && line) { sayEl.innerText = line; sayEl.classList.add('show'); setTimeout(() => sayEl.classList.remove('show'), 3600); }
       setTimeout(() => {
         el.classList.remove('walking');
-        if (isLounge) {
-          el.classList.add('sipping');
-          if (drEl) drEl.innerText = drinks[Math.floor(Math.random() * drinks.length)];
-        }
+        if (mode === 'sip') el.classList.add('sipping');
+        else if (mode === 'sit') el.classList.add('sitting');
         st.busy = false;
-      }, 2100);
+      }, 2050);
     };
 
     if (st.floor === tf) {
       arrive();
     } else {
-      // Walk to glass door on current floor, fade into elevator/corridor, emerge from target floor door!
       const doorX = 86;
       if (doorX < st.x) el.classList.add('flip'); else el.classList.remove('flip');
       el.style.left = doorX + '%';
@@ -641,7 +677,7 @@ function startLiveOffice() {
           if (tx < doorX) el.classList.add('flip'); else el.classList.remove('flip');
           arrive();
         }, 320);
-      }, 1550);
+      }, 1700);
     }
   };
 
@@ -650,11 +686,11 @@ function startLiveOffice() {
     const h = homes[who];
     const goHome = Math.random() < 0.42;
     if (goHome) {
-      moveTo(who, h.x + (Math.random()*3-1.5), h.y, h.floor, h.say[Math.floor(Math.random()*h.say.length)], false);
+      moveTo(who, h.x + (Math.random()*2-1), h.y, h.floor, h.say[Math.floor(Math.random()*h.say.length)], 'sit');
     } else {
       const sp = spots[Math.floor(Math.random() * spots.length)];
       if (who === '세나' && sp.name === '대표실') return;
-      moveTo(who, sp.x + (Math.random()*4-2), sp.y, sp.floor, sp.lines[Math.floor(Math.random()*sp.lines.length)], sp.name === '라운지');
+      moveTo(who, sp.x + (Math.random()*4-2), sp.y, sp.floor, sp.lines[Math.floor(Math.random()*sp.lines.length)], sp.name === '라운지' ? 'sip' : (sp.name === '대회의실' ? 'sit' : 'stand'));
     }
   };
   setTimeout(step, 800);
