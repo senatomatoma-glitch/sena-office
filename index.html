@@ -475,8 +475,11 @@ function showTab(name, btn) {
 }
 function ticketCardHtml(t, idx) {
   const m = esc((t.memo || '').replace(/\n+/g, ' ').slice(0, 140));
+  const chkMap = JSON.parse(localStorage.getItem('sena_checks') || '{}');
+  const isChk = Boolean(chkMap[t.ticket] || (t.memo || '').includes('[세나 대표 확인'));
+  const chkBadge = isChk ? '<span class="badge" style="background:#DCFCE7;color:#15803D;">☑️ 대표확인</span>' : '';
   return `<div class="card" onclick="openTicket(${idx})">
-    <div class="card-head"><strong>${esc(t.ticket||'-')} · ${esc(t.area)} · ${esc(t.type)}</strong>${statusBadge(t.status)}</div>
+    <div class="card-head"><strong>${esc(t.ticket||'-')} · ${esc(t.area)} · ${esc(t.type)}</strong><span style="display:flex;gap:4px;">${chkBadge}${statusBadge(t.status)}</span></div>
     <div class="t-title">${esc(t.title)}</div>
     <div class="t-meta">실행: <b>${esc(t.owner||'-')}</b> · 검증: <b>${esc(t.verifier||'-')}</b> · 마감: ${esc(t.deadline||'-')}</div>
     ${m ? `<div class="t-memo-preview">${m}</div>` : ''}
@@ -565,10 +568,23 @@ function renderCeoPretty(c) {
     }
     return `<div class="bf-card"><div class="bf-h">📌 기타 안내</div><div style="font-size:12px;line-height:1.55;color:#334155;">${formatMdRich(blk)}</div></div>`;
   }).join('');
+  const bId = 'CEO-' + (c.date || '').slice(0, 10);
+  const bChk = Boolean((JSON.parse(localStorage.getItem('sena_checks') || '{}'))[bId]);
+  const fbBox = `<div class="bf-card" style="background:#F0FDF9;">
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;cursor:pointer;">
+      <input type="checkbox" id="chk-${esc(bId)}" ${bChk?'checked':''} onchange="saveCheckLocal('${esc(bId)}', this.checked)" style="width:17px;height:17px;accent-color:var(--accent);">
+      ✅ 대표 확인 완료
+    </label>
+    <textarea id="cmt-${esc(bId)}" placeholder="아카네·팀원에게 남길 코멘트를 적으면 시트에 바로 전달돼요..." style="width:100%;margin-top:8px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);font-size:12.5px;min-height:54px;font-family:inherit;"></textarea>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button class="f-btn active" style="flex:1;padding:8px;" onclick="sendSenaFeedback('briefing','${esc(bId)}','${esc(c.author||'아카네')}')">📤 확인·코멘트 시트 전송</button>
+      <button class="f-btn" onclick="configWebhook()">⚙️</button>
+    </div>
+  </div>`;
   return `<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
     <strong style="font-size:14px;">☀️ ${esc(c.title)}</strong>
     <span class="badge b-run">${esc(c.author||'아카네')} · ${esc((c.date||'').slice(5,16))}</span>
-  </div>${secHtml}</div>`;
+  </div>${secHtml}${fbBox}</div>`;
 }
 function renderBriefing() {
   const box = document.getElementById('briefing-box');
@@ -909,14 +925,66 @@ function renderMembers() {
     </div>`;
   }).join('');
 }
+function saveCheckLocal(id, checked) {
+  const m = JSON.parse(localStorage.getItem('sena_checks') || '{}');
+  if (checked) m[id] = true; else delete m[id];
+  localStorage.setItem('sena_checks', JSON.stringify(m));
+  if (typeof renderMapQueue === 'function') renderMapQueue();
+  if (typeof renderQueue === 'function') renderQueue();
+}
+function configWebhook() {
+  const cur = localStorage.getItem('sena_webhook_url') || '';
+  const u = prompt('Google 시트 Apps Script 웹앱 URL을 붙여넣어 주세요 (1회만 설정):', cur);
+  if (u !== null) {
+    localStorage.setItem('sena_webhook_url', u.trim());
+    alert(u.trim() ? '✅ 시트 연동 URL이 저장되었어요!' : 'URL이 비워졌어요.');
+  }
+}
+async function sendSenaFeedback(kind, id, owner) {
+  const chkEl = document.getElementById('chk-' + id);
+  const cmtEl = document.getElementById('cmt-' + id);
+  const checked = chkEl ? chkEl.checked : true;
+  const comment = cmtEl ? cmtEl.value.trim() : '';
+  saveCheckLocal(id, checked);
+  let url = localStorage.getItem('sena_webhook_url') || '';
+  if (!url) {
+    configWebhook();
+    url = localStorage.getItem('sena_webhook_url') || '';
+    if (!url) return;
+  }
+  try {
+    await fetch(url, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ pin: localStorage.getItem('sena_office_pin') || '1228', kind, id, owner, checked, comment })
+    });
+    if (cmtEl) cmtEl.value = '';
+    alert(`✅ 시트 반영 요청 완료!\n(${id}${comment ? ' · 코멘트 담당자 전달됨' : ' · 확인 체크됨'})`);
+  } catch (e) {
+    alert('전송 오류: ' + e.message);
+  }
+}
 function openTicket(idx) {
   const t = DATA.tickets[idx];
+  const tk = (t.ticket || '').trim();
+  const isChk = Boolean((JSON.parse(localStorage.getItem('sena_checks') || '{}'))[tk] || (t.memo || '').includes('[세나 대표 확인'));
   document.getElementById('modal-title').innerText = `${t.ticket||'티켓'} · ${t.area} (${t.type})`;
   document.getElementById('modal-body').innerHTML = `
     <div style="margin-bottom:8px;">${statusBadge(t.status)} <span class="t-meta" style="margin-left:6px;">우선순위 ${esc(t.priority||'-')} · 마감 ${esc(t.deadline||'-')}</span></div>
     <div class="t-title" style="font-size:15px;">${esc(t.title)}</div>
     <div class="t-meta" style="margin-top:8px;">지시: <b>${esc(t.director||'-')}</b> · 실행: <b>${esc(t.owner||'-')}</b> (시작 ${esc(t.started||'-')} / 완료 ${esc(t.finished||'-')})<br>검증: <b>${esc(t.verifier||'-')}</b> (시작 ${esc(t.ver_started||'-')})</div>
-    <div class="memo-full">${esc(t.memo||'기록된 상세 메모가 없어.')}</div>`;
+    <div class="memo-full">${esc(t.memo||'기록된 상세 메모가 없어.')}</div>
+    <div style="margin-top:12px;background:#F0FDF9;border:1px solid var(--border);border-radius:12px;padding:10px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;cursor:pointer;">
+        <input type="checkbox" id="chk-${esc(tk)}" ${isChk?'checked':''} onchange="saveCheckLocal('${esc(tk)}', this.checked)" style="width:17px;height:17px;accent-color:var(--accent);">
+        ✅ 대표 확인 완료
+      </label>
+      <textarea id="cmt-${esc(tk)}" placeholder="담당자(${esc(t.owner||'담당자')})에게 피드백 코멘트 남기기..." style="width:100%;margin-top:8px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);font-size:12.5px;min-height:54px;font-family:inherit;"></textarea>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <button class="f-btn active" style="flex:1;padding:8px;" onclick="sendSenaFeedback('ticket','${esc(tk)}','${esc(t.owner||'')}')">📤 확인·코멘트 시트 전송</button>
+        <button class="f-btn" onclick="configWebhook()">⚙️</button>
+      </div>
+    </div>`;
   document.getElementById('modal-bg').classList.add('open');
 }
 function openMember(name) {
