@@ -134,11 +134,22 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list) -> dict:
                 "archived_at": "",
             })
 
+    ceo_briefings = []
+    for o in opinions:
+        if "CEO" in (o.get("topic") or "").upper() or "브리핑" in (o.get("topic") or ""):
+            ceo_briefings.append({
+                "date": o.get("date", ""),
+                "title": o.get("topic", ""),
+                "author": o.get("author", "") or "아카네",
+                "body": o.get("conclusion") or o.get("mihyang") or o.get("miyu") or o.get("aimi") or "",
+            })
+
     return {
         "updated": datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),
         "tickets": tickets,
         "opinions": list(reversed(opinions[-12:])),
         "done_recent": list(reversed(done_recent[-15:])),
+        "ceo_briefings": list(reversed(ceo_briefings[-7:])),
     }
 
 

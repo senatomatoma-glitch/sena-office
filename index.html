@@ -60,7 +60,7 @@
     background: var(--card); color: var(--brown); border: 1px solid var(--border);
     padding: 6px 11px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer;
   }
-  nav { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding: 4px 12px 12px; }
+  nav { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; padding: 4px 10px 12px; }
   .s-card { display: flex; gap: 11px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 11px; margin-bottom: 9px; align-items: flex-start; }
   .s-img { width: 74px; height: 96px; object-fit: cover; border-radius: 12px; background: #EFE3D3; flex-shrink: 0; }
   .s-body { flex: 1; min-width: 0; }
@@ -205,8 +205,9 @@
 
   <nav>
     <button class="tab-btn active" onclick="showTab('map', this)">🏢 사무실</button>
-    <button class="tab-btn" onclick="showTab('approval', this)">👑 대표 승인 <span id="nav-app-cnt" style="background:#FF4D4F;color:#fff;border-radius:10px;padding:1px 5px;font-size:9px;display:none;">0</span></button>
-    <button class="tab-btn" onclick="showTab('queue', this)">📋 접수 큐</button>
+    <button class="tab-btn" onclick="showTab('briefing', this)">📰 브리핑</button>
+    <button class="tab-btn" onclick="showTab('approval', this)">👑 승인 <span id="nav-app-cnt" style="background:#FF4D4F;color:#fff;border-radius:10px;padding:1px 5px;font-size:9px;display:none;">0</span></button>
+    <button class="tab-btn" onclick="showTab('queue', this)">📋 접수큐</button>
     <button class="tab-btn" onclick="showTab('meeting', this)">💬 회의</button>
     <button class="tab-btn" onclick="showTab('status', this)">📊 부서</button>
     <button class="tab-btn" onclick="showTab('secret', this)">🤫 비밀</button>
@@ -220,7 +221,7 @@
     </div>
     <div class="map-wrap">
       <img src="office.png?v=8" alt="세나 비서실 부서별 3D 클레이 오피스">
-      <button class="head-bubble boss" id="hb-세나" style="left:49%;top:7%;" onclick="showTab('approval', document.querySelectorAll('.tab-btn')[1])">👑 승인 0건</button>
+      <button class="head-bubble boss" id="hb-세나" style="left:49%;top:7%;" onclick="showTab('approval', document.querySelectorAll('.tab-btn')[2])">👑 승인 0건</button>
       <button class="head-bubble" id="hb-미향" style="left:25%;top:37%;" onclick="openMember('미향')">💬 ...</button>
       <button class="head-bubble" id="hb-미유" style="left:74%;top:39%;" onclick="openMember('미유')">💬 ...</button>
       <button class="head-bubble" id="hb-아카네" style="left:26%;top:68%;" onclick="openMember('아카네')">💬 ...</button>
@@ -237,6 +238,17 @@
       <div class="stat-strip" id="map-stat-strip"></div>
       <div id="map-queue-list"></div>
     </div>
+  </div>
+
+  <div id="tab-briefing" class="section">
+    <div class="banner" style="border-radius:14px;margin-bottom:12px;padding:12px 14px;">
+      <div class="banner-tag">📰 일일 CEO 브리핑 · 완료 현황</div>
+      <h2 style="font-size:15px;">세나 대표님 오늘의 브리핑</h2>
+      <p style="font-size:11px;">아카네의 05:10 CEO 브리핑과 오늘 완료·진행 현황을 모아 보여줘요.</p>
+    </div>
+    <div id="ceo-briefing-list"></div>
+    <div class="subhead" style="margin-top:14px;"><h3>✅ 오늘 완료 · 현황 브리핑</h3></div>
+    <div id="briefing-tab-done" style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:12px 14px;"></div>
   </div>
 
   <div id="tab-approval" class="section">
@@ -390,7 +402,6 @@ function renderMapQueue() {
 }
 function renderBriefing() {
   const box = document.getElementById('briefing-box');
-  if (!box) return;
   const todayStr = (DATA.updated || '').slice(0, 10);
   const doneList = DATA.done_recent || [];
   const todayDone = doneList.filter(d => (d.done_time || '').startsWith(todayStr) || (d.archived_at || '').startsWith(todayStr));
@@ -401,15 +412,28 @@ function renderBriefing() {
   const rowsHtml = showList.map(d => {
     const tShort = esc((d.title || '').replace(/^\[[^\]]+\]\s*/, '').slice(0, 34));
     const tm = esc((d.done_time || d.archived_at || '').slice(5, 16));
-    return `<div style="font-size:11.5px;padding:4px 0;border-top:1px dashed #EEDFCC;display:flex;justify-content:space-between;gap:8px;">
+    return `<div style="font-size:11.5px;padding:4px 0;border-top:1px dashed var(--border);display:flex;justify-content:space-between;gap:8px;">
       <span><b>✅ ${esc(d.ticket||'완료')}</b> (${esc(d.owner||'-')}) ${tShort}</span>
       <span style="color:var(--muted);white-space:nowrap;">${tm}</span>
     </div>`;
   }).join('') || '<div class="t-meta">아직 완료 기록이 없어.</div>';
-  box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+  const summaryHtml = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
     <strong style="font-size:13.5px;">📰 ${todayDone.length ? `오늘(${todayStr.slice(5)}) 완료 ${todayDone.length}건` : '최근 완료 브리핑'}</strong>
     <span style="font-size:11px;color:var(--muted);font-weight:700;">승인 ${decCnt} · 실행 ${runCnt} · 검증 ${verCnt}</span>
   </div>${rowsHtml}`;
+  if (box) box.innerHTML = summaryHtml;
+  const tabDone = document.getElementById('briefing-tab-done');
+  if (tabDone) tabDone.innerHTML = summaryHtml;
+
+  const ceoListEl = document.getElementById('ceo-briefing-list');
+  if (ceoListEl) {
+    const ceos = DATA.ceo_briefings || [];
+    if (!ceos.length) {
+      ceoListEl.innerHTML = `<div class="t-card"><div class="t-title">☀️ 아카네 05:10 CEO 브리핑 대기 중</div><div class="t-meta" style="margin-top:6px;">아카네가 <code>AI 실행창구</code> 시트(의견 정리 탭, 제목에 <code>[CEO 브리핑]</code> 포함)에 매일 아침 브리핑을 올리면 5분마다 자동으로 여기 표시돼요!</div></div>`;
+    } else {
+      ceoListEl.innerHTML = ceos.map(c => `<div class="t-card"><div class="t-top"><span class="t-num">☀️ ${esc(c.date||'')}</span><span class="badge st-run">${esc(c.author||'아카네')}</span></div><div class="t-title">${esc(c.title)}</div><div class="t-meta" style="margin-top:6px;white-space:pre-wrap;line-height:1.5;">${esc(c.body)}</div></div>`).join('');
+    }
+  }
 }
 function renderMapBubbles() {
   const appCnt = DATA.tickets.filter(t => isNeedApproval(t)).length;
