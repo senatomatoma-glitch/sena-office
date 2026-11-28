@@ -921,7 +921,7 @@ def fetch_estama_week(sid, timeout=25):
         if len(html2) > 500:
             out.update(method='curl-post', status=200, text=html2, bytes=len(html2))
         else:
-            out['error'] = 'empty week html'
+            out['error'] = 'empty week html :: ' + re.sub(r'\s+', ' ', body[:160])
     except Exception as e:
         out['error'] = f'{type(e).__name__}: {e}'
     finally:
