@@ -93,7 +93,11 @@ def status_of(p, now):
 
 
 def official_ok(p):
-    """규칙 9 — 공식 재적 목록이 충분히 완전할 때만 목록 밖 인원을 제외."""
+    """규칙 9 — 공식 재적 목록이 충분히 완전할 때만 목록 밖 인원을 제외. 등록 리스트는 항상 유지."""
+    if p.get('registered'):
+        return True
+    if p.get('official_authoritative') and p.get('in_official') is False:
+        return False
     ratio = p.get('official_ratio')
     if ratio is None:
         return True
@@ -344,14 +348,14 @@ def build(live, cache, now):
         cands = [p for p in any_photo if p['shop'] == skey]
         rep = None
         st = live['shop_status'].get(skey, {})
-        rank_list = st.get('ms_rank') or []
+        rank_list = st.get('ms_rank') or st.get('brand_rank') or []
         by_name = {norm_name(c['name']): c for c in cands}
         for rk in rank_list:
             c = by_name.get(norm_name(rk['name']))
             if c and c.get('age'):
                 rep = c
                 break
-        if not rep and shop.get('adapter') == 'estama':
+        if not rep and shop.get('adapter') in ('estama', 'brand'):
             order = sorted([p for p in live['people'] if p['shop'] == skey],
                            key=lambda x: (x.get('order') if x.get('order') is not None else 9999))
             for c in order:
@@ -360,7 +364,7 @@ def build(live, cache, now):
                     break
         if rep:
             reps2.append(rep)
-        elif shop.get('adapter') == 'estama':
+        elif shop.get('adapter') in ('estama', 'brand'):
             shop_level.append(shop)
 
     def dedupe_by_name(lst):

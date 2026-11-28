@@ -76,7 +76,7 @@ def http_get(url, timeout=20):
                         out.update(method='curl', status=200, text=txt, bytes=len(txt.encode('utf-8')),
                                    seconds=time.time() - t0)
                         return out
-                    out['error'] = (out.get('error') or '') + f' | curl rc={rc}'
+                    out['error'] = (out.get('error') or '') + f' | curl rc={rc}' + (' Could not resolve' if rc == 6 else '')
                 elif m == 'jina':
                     txt, sec, rc = _curl(JINA + url, max(timeout, 45))
                     if rc == 0 and len(txt) > 3000 and 'Markdown Content' in txt:
@@ -84,6 +84,8 @@ def http_get(url, timeout=20):
                                    seconds=time.time() - t0)
                         return out
                     out['error'] = (out.get('error') or '') + f' | jina rc={rc}'
+                if 'name resolution' in (out.get('error') or '') or 'Could not resolve' in (out.get('error') or ''):
+                    break  # DNS 자체가 죽은 호스트 — 다른 경로 시도 무의미
         if host == 'estama.jp' and out.get('error'):
             time.sleep(3.0)
     out['seconds'] = time.time() - t0
@@ -187,6 +189,7 @@ def parse_estama_cast(text, shop_key, sid):
             continue
         h4 = re.sub(r'<[^>]+>', '', h4)
         nm = re.sub(r'[（(]\s*\d+\s*[)）]', '', h4).strip()
+        nm = re.sub(r'[☆★]?\s*体験入店$', '', nm).strip()
         age = re.search(r'[（(](\d+)[)）]', h4)
         cup = re.search(r'B\.\d+\(([A-K])\)', det)
         ht = re.search(r'T\.(\d{2,3})', det)
@@ -505,7 +508,80 @@ def parse_cream(text):
     return people
 
 
+def _brand_items(text):
+    """브랜드 사이트(에스타마 계열 CMS) — /therapist/·/schedule/ 공통 카드 블록 분해."""
+    ms = list(re.finditer(r'<a class="[^"]*" href="/therapist/(\d+)/">', text))
+    out = []
+    for i, m in enumerate(ms):
+        end = ms[i + 1].start() if i + 1 < len(ms) else len(text)
+        out.append((m.group(1), text[m.start():min(end, m.start() + 4000)]))
+    return out
+
+
+def _brand_name(chunk):
+    nm = re.search(r'(?:<img[^>]*title|<span[^>]*title)="([^"]+)"', chunk)
+    if not nm:
+        nm = re.search(r'__name">\s*([^<(]+?)\s*(?:<span class="[^"]*__age">\((\d+)\))?', chunk)
+        return (nm.group(1).strip(), int(nm.group(2)) if nm.group(2) else None) if nm else (None, None)
+    return nm.group(1).strip(), None
+
+
+def parse_brand_therapist(text, host):
+    """브랜드 공식 /therapist/ 재적 목록 — 이름·나이·컵·키·신인·이미지·프로필 URL."""
+    people = {}
+    idx = 0
+    for pid, chunk in _brand_items(text):
+        name, age_alt = _brand_name(chunk)
+        if not name:
+            continue
+        if age_alt is None:
+            am = re.search(r'__age">\s*\((\d+)\)', chunk)
+            if am:
+                age_alt = int(am.group(1))
+        style = re.search(r'class="[^"]*__style">\s*([^<]+)<', chunk)
+        st = style.group(1) if style else ''
+        cup = re.search(r'[BT]\.?\s?\d{2,3}\s?.*?\(([A-K])\)', st) or re.search(r'\(([A-K])\)', st)
+        ht = re.search(r'T\.?\s?(\d{2,3})', st) or re.search(r'T\.?\s?(\d{2,3})', chunk)
+        img = re.search(r'<img[^>]*src="(https://img\.estama\.jp[^"]+)"', chunk)
+        people[norm_name(name)] = dict(
+            name=name, age=age_alt,
+            cup=cup.group(1) if cup else None,
+            height=int(ht.group(1)) if ht else None,
+            new=('新人' in chunk or 'NEW FACE' in chunk or 'new-face-label' in chunk),
+            order=idx, img=img.group(1) if img else None,
+            url=f'https://{host}/therapist/{pid}/')
+        idx += 1
+    return people
+
+
+def parse_brand_schedule(text):
+    """브랜드 공식 /schedule/ — 오늘 출근 시간·상태."""
+    out = {}
+    for _pid, chunk in _brand_items(text):
+        name, _ = _brand_name(chunk)
+        wt = re.search(r'__worktime[^>]*>\s*(?:<i[^>]*></i>)?\s*(\d{1,2}:\d{2})\s*[～~-]\s*(\d{1,2}:\d{2})',
+                       chunk, re.S)
+        if not name or not wt:
+            continue
+        at = re.search(r'__attend[^>]*>(.*?)</span>', chunk, re.S)
+        state = re.sub(r'<[^>]+>', '', at.group(1)).strip() if at else ''
+        out[norm_name(name)] = dict(open=wt.group(1), close=wt.group(2), state=state,
+                                    soldout=('完売' in state or '受付終了' in state))
+    return out
+
+
+def parse_brand_ranking(text):
+    """브랜드 공식 /ranking/ — 카드 순서가 곧 순위."""
+    out = []
+    for pid, chunk in _brand_items(text):
+        name, _ = _brand_name(chunk)
+        if name:
+            out.append(dict(rank=len(out) + 1, pid=pid, name=name))
+    return out
+
+
 OFFICIAL_PARSERS = {
+    'brand': parse_brand_therapist,
     'genkaya': parse_genkaya_girl,
     'hihouden': parse_hihouden_girl,
     'lirica': parse_lirica,
@@ -555,15 +631,19 @@ def load_cache():
 
 def build_tasks(cache):
     tasks = []
-    # esmata rankings
-    for area in ESTAMA_AREAS:
-        tasks.append(dict(kind='estama_shop_rank', area=area,
-                          url=f'https://estama.jp/kansai/ranking/shop/{area}/delivery/monthly/'))
-        for pname, psuffix in PERIODS.items():
-            tasks.append(dict(kind='estama_th_rank', area=area, period=pname,
-                              url=f'https://estama.jp/kansai/ranking/therapist/{area}/delivery/{psuffix}'))
+    # 2026-11-28: 에스타마 월간 가게 랭킹·테라피스트 랭킹 수집은 제거 (세나 지시)
     for shop in cache['shops']:
         if not shop.get('active'):
+            continue
+        if shop.get('adapter') == 'brand' and shop.get('cast_url'):
+            tasks.append(dict(kind='official_brand', shop=shop['key'], adapter='brand', url=shop['cast_url']))
+            if shop.get('schedule_url'):
+                tasks.append(dict(kind='brand_schedule', shop=shop['key'], url=shop['schedule_url']))
+                for n in (2, 3, 4):
+                    tasks.append(dict(kind='brand_schedule_day', shop=shop['key'], day=n,
+                                      url=shop['schedule_url'].rstrip('/') + f'/d{n}/'))
+            if shop.get('rank_url'):
+                tasks.append(dict(kind='brand_rank', shop=shop['key'], url=shop['rank_url']))
             continue
         if shop.get('adapter') == 'estama' and shop.get('estama'):
             tasks.append(dict(kind='estama_shop', shop=shop['key'], sid=shop['estama'],
@@ -628,8 +708,7 @@ def main():
     tasks = build_tasks(cache)
     if quick:
         tasks = [t for t in tasks if (
-            t['kind'] in ('estama_schedule', 'official_schedule', 'ms_rank')
-            or (t['kind'] == 'estama_th_rank' and t.get('period') == 'daily')
+            t['kind'] in ('estama_schedule', 'official_schedule', 'ms_rank', 'brand_schedule', 'brand_rank')
             or (t['kind'] == 'official' and t.get('adapter') == 'femmefatale')
         )]
     t_start = time.time()
@@ -656,8 +735,6 @@ def main():
     people = {}       # key -> record
     shops = {s['key']: dict(s) for s in cache['shops']}
     if quick:
-        estama_shops = prev_live.get('estama_shop_rank') or {}
-        estama_th = [r for r in (prev_live.get('estama_therapist_rank') or []) if r.get('period') != 'daily']
         shop_status = prev_live.get('shop_status') or {}
         for p in (prev_live.get('people') or []):
             rec = dict(p)
@@ -668,6 +745,7 @@ def main():
         estama_th = []    # therapist ranking rows
         shop_status = {}  # shop_key -> dict(ms_ok, official_ok, note)
     schedules = {}    # shop -> {normname: {open, close, state, soldout}}
+    day_schedules = {}  # shop -> {day_no: {normname: {...}}}
     img_downloads = []
 
     for r in results:
@@ -679,16 +757,7 @@ def main():
             continue
         txt = r['text']
         k = r.get('kind')
-        if k == 'estama_shop_rank':
-            estama_shops[r['area']] = parse_estama_shop_ranking(txt)
-            rep['parsed'] = len(estama_shops[r['area']])
-        elif k == 'estama_th_rank':
-            rows = parse_estama_therapist_ranking(txt, r['area'])
-            for row in rows:
-                row['period'] = r['period']
-            estama_th.extend(rows)
-            rep['parsed'] = len(rows)
-        elif k == 'estama_shop':
+        if k == 'estama_shop':
             ps = parse_estama_cast(txt, r['shop'], r['sid'])
             st = shop_status.setdefault(r['shop'], {})
             st['estama_cast'] = len(ps)
@@ -723,6 +792,40 @@ def main():
             st = shop_status.setdefault(r['shop'], {})
             st['ms_rank'] = rk[:10]
             rep['parsed'] = len(rk)
+        elif k == 'brand_rank':
+            rk = parse_brand_ranking(txt)
+            st = shop_status.setdefault(r['shop'], {})
+            st['brand_rank'] = rk[:10]
+            rep['parsed'] = len(rk)
+        elif k == 'brand_schedule':
+            sched = parse_brand_schedule(txt)
+            schedules.setdefault(r['shop'], {}).update(sched)
+            rep['parsed'] = len(sched)
+        elif k == 'brand_schedule_day':
+            sched = parse_brand_schedule(txt)
+            day_schedules.setdefault(r['shop'], {})[r['day']] = sched
+            rep['parsed'] = len(sched)
+        elif k == 'official_brand':
+            host = re.sub(r'^https?://', '', r['url']).split('/')[0]
+            ops = parse_brand_therapist(txt, host)
+            st = shop_status.setdefault(r['shop'], {})
+            st['official'] = len(ops)
+            st['official_adapter'] = 'brand'
+            st['official_authoritative'] = True
+            if len(ops) < 5:
+                st['official_note'] = 'too few names (kept portal)'
+                rep['parsed'] = len(ops)
+                continue
+            for nm, p in ops.items():
+                key = f"{r['shop']}|{nm}"
+                rec = people.setdefault(key, dict(shop=r['shop'], name=p['name'], sources=[], today=None))
+                rec.setdefault('official', {})
+                rec['official'].update({kk: vv for kk, vv in p.items() if vv is not None})
+                rec['sources'].append('brand')
+                rec['official_authoritative'] = True
+                if not rec.get('name'):
+                    rec['name'] = p['name']
+            rep['parsed'] = len(ops)
         elif k == 'official':
             fn = OFFICIAL_PARSERS[r['adapter']]
             ops = fn(txt)
@@ -760,6 +863,24 @@ def main():
             if nm in sched:
                 rec['today'] = dict(sched[nm])
 
+    # ---- 다음 출근일 (브랜드 공식 /schedule/d2~d4/)
+    WDAY = ['월', '화', '수', '목', '금', '토', '일']
+    now = datetime.datetime.now()
+    for shop, days in day_schedules.items():
+        for rec in people.values():
+            if rec['shop'] != shop:
+                continue
+            nm = norm_name(rec['name'])
+            rows = []
+            for n in sorted(days):
+                s = days[n].get(nm)
+                if not s or not s.get('open'):
+                    continue
+                d = now + datetime.timedelta(days=n - 1)
+                rows.append(f"{d.month}/{d.day:02d}({WDAY[d.weekday()]}) {s['open']}~{s['close']}")
+            if rows:
+                rec['next_shift'] = ' · '.join(rows[:3])
+
     # ---- official membership + ratio + overrides
     if not quick:
         for shop_key, st in shop_status.items():
@@ -772,6 +893,7 @@ def main():
                     continue
                 rec['in_official'] = (norm_name(rec['name']) in names) if st.get('official', 0) >= 5 else None
                 rec['official_ratio'] = st['official_ratio']
+                rec['official_authoritative'] = bool(st.get('official_authoritative'))
     # merge official values over portal
     for rec in people.values():
         off = rec.get('official') or {}
@@ -867,8 +989,8 @@ def main():
                   sources=len(tasks), workers=workers),
         shops=shops,
         shop_status=shop_status,
-        estama_shop_rank=estama_shops,
-        estama_therapist_rank=estama_th,
+        estama_shop_rank={},
+        estama_therapist_rank=[],
         people=sorted(people.values(), key=lambda x: (x['shop'], -(CUP_ORDER.get(x.get('cup') or '', 0)), x.get('age') or 99)),
         images=dict(downloaded=len([1 for x in img_downloads if x.get('url')]), errors=img_downloads[:20]),
     )
