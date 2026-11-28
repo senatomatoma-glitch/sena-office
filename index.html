@@ -792,6 +792,12 @@ function startLiveOffice() {
             window._coffeeRelief = window._coffeeRelief || {};
             window._coffeeRelief[who] = Math.min(40, (window._coffeeRelief[who] || 0) + 5);
             renderMapBubbles();
+            const escortLines = [
+              `${who}아, 스트레스 ${st}% 넘었길래 내가 끌고 왔어! 커피 한 잔 마시고 숨 좀 돌리자 💙`,
+              `${who}아, 일 밀린 건 나한테도 톡 던져! 일단 마카롱 먹고 천천히 쳐내자 ☕`,
+              `${who}아, 여기서 쓰러지면 안 돼 😅 잠깐 수다 떨다 다시 가자!`,
+            ];
+            addLiveLounge('미향', 25000, escortLines[Math.floor(Math.random() * escortLines.length)]);
           }
           addLiveLounge(who);
         } else {
@@ -950,7 +956,7 @@ function buildLiveLoungeLine(who) {
   if (mood >= 85) tails.push(`기분 ${mood}점! 오늘 컨디션 좋아 ✨`);
   return `${subj}. ${loungePick(tails)}`;
 }
-function addLiveLounge(who, minGapMs) {
+function addLiveLounge(who, minGapMs, customText) {
   if (!who) return false;
   const nowMs = Date.now();
   window._liveLounge = window._liveLounge || [];
@@ -961,7 +967,7 @@ function addLiveLounge(who, minGapMs) {
   const d = new Date(nowMs);
   const p2 = n => String(n).padStart(2, '0');
   const time = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
-  window._liveLounge.push({ time: time, name: who, tag: '☕ 라운지 톡', text: buildLiveLoungeLine(who), live: true, ts: nowMs });
+  window._liveLounge.push({ time: time, name: who, tag: '☕ 라운지 톡', text: customText || buildLiveLoungeLine(who), live: true, ts: nowMs });
   if (window._liveLounge.length > 20) window._liveLounge = window._liveLounge.slice(-20);
   renderLounge();
   return true;
