@@ -1345,7 +1345,7 @@ function openTicket(idx) {
   document.getElementById('modal-bg').classList.add('open');
 }
 function openMember(name) {
-  const r = ROLES[name], own = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=>t.owner===name), ver = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=>t.verifier===name && t.status==='검증 중');
+  const r = ROLES[name], own = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=>t.owner===name).sort((a,b)=>ticketSortRank(a.t)-ticketSortRank(b.t)), ver = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=>t.verifier===name && t.status==='검증 중').sort((a,b)=>ticketSortRank(a.t)-ticketSortRank(b.t));
   const isMvp = getMvp() === name;
   document.getElementById('modal-title').innerText = `${r.emoji} ${r.dept} · ${name}`;
   document.getElementById('modal-body').innerHTML = `<p style="font-size:12px;color:#8C7A6B;margin-bottom:8px;">${r.desc}</p>
