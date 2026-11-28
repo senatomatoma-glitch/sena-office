@@ -9,9 +9,13 @@ JST = timezone(timedelta(hours=9))
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "work"))
 import secret_build_cards as sbc
+import secret_fetch as sfc
 
 ENC_PATH = os.path.join(ROOT, "secret_enc.json")
 WEEK_CACHE = os.path.join(ROOT, "work", "secret_week_cache.json")
+MONTHLY_STATE = os.path.join(ROOT, "work", "secret_monthly.json")
+MONTHLY_TTL = timedelta(hours=168)      # 마지막 갱신 후 7일
+MONTHLY_REFRESH_HOUR = 4                # 월요일 04:00 JST 이후 이번 주 미갱신이면 갱신
 
 
 def _read_old_payload(pin):
@@ -26,11 +30,10 @@ def _read_old_payload(pin):
         return None
 
 
-def restore_week_cache(pin):
+def restore_week_cache(old):
     """직전 실행의 secret_enc.json 안 `_wc`(주간 스케줄 캐시)를 복원한다.
     워크플로가 secret_enc.json 만 커밋하므로, 5분마다 도는 실행 사이에 7일치 캐시를 이어쓰는 유일한 경로.
     로컬에 이미 더 새 캐시가 있으면 그것을 살리고, 겹치는 항목은 ts 가 새것을 쓴다."""
-    old = _read_old_payload(pin)
     wc = (old or {}).get("_wc") or {}
     items = wc.get("items") if isinstance(wc, dict) else None
     if not isinstance(items, dict) or not items:
@@ -64,13 +67,88 @@ def read_week_cache():
         return None
 
 
+def _ts_jst(s):
+    """'_monthly_shops.updated_at' 파싱 — JST 오프셋 포함/미포함 모두."""
+    if not isinstance(s, str) or not s.strip():
+        return None
+    t = s.strip().replace("Z", "+00:00")
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"):
+        try:
+            dt = datetime.strptime(t, fmt)
+            return dt if dt.tzinfo else dt.replace(tzinfo=JST)
+        except ValueError:
+            continue
+    return None
+
+
+def restore_monthly_state(old):
+    """직전 secret_enc.json payload 의 `_monthly_shops` 를 work/secret_monthly.json 으로 복원.
+    워크플로가 secret_enc.json 만 커밋하므로 주 1회 교체 결과를 실행 사이에 이어쓰는 유일한 경로."""
+    ms = (old or {}).get("_monthly_shops")
+    if not isinstance(ms, dict) or not isinstance(ms.get("shops"), list) or not ms["shops"]:
+        return None
+    cur = None
+    try:
+        d = json.load(open(MONTHLY_STATE, encoding="utf-8"))
+        if isinstance(d, dict) and isinstance(d.get("shops"), list):
+            cur = d
+    except Exception:
+        cur = None
+    a, b = _ts_jst((cur or {}).get("updated_at")), _ts_jst(ms.get("updated_at"))
+    if cur and a and b and a > b:
+        print(f"[monthly] local state newer ({cur.get('updated_at')}) — kept")
+        return cur
+    os.makedirs(os.path.dirname(MONTHLY_STATE), exist_ok=True)
+    json.dump(ms, open(MONTHLY_STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(f"[monthly] restored {len(ms['shops'])} shops from previous secret_enc.json ({ms.get('updated_at')})")
+    return ms
+
+
+def monthly_due(state, now):
+    """월간 TOP5 갱신 시점 — ① 없음 ② 마지막 갱신 후 7일 경과 ③ 월요일 04:00 JST 이후 이번 주 미갱신."""
+    ts = _ts_jst((state or {}).get("updated_at"))
+    if not state or not isinstance(state.get("shops"), list) or not state["shops"] or not ts:
+        return True, "no state"
+    age = now - ts
+    if age >= MONTHLY_TTL:
+        return True, f"age {age.total_seconds() / 3600:.1f}h >= 168h"
+    monday = (now - timedelta(days=now.weekday())).replace(hour=MONTHLY_REFRESH_HOUR, minute=0,
+                                                          second=0, microsecond=0)
+    if now >= monday and ts < monday and age >= timedelta(hours=24):
+        return True, f"monday {monday:%Y-%m-%d %H:%M} JST anchor not passed"
+    return False, f"fresh ({age.total_seconds() / 3600:.1f}h since {ts:%Y-%m-%d %H:%M} JST)"
+
+
+def refresh_monthly(pin_state):
+    """secret_fetch 의 수집기를 빌려 4지역 월간 TOP5 를 새로 긁고 상태를 저장한다."""
+    state = sfc.refresh_monthly_top5(pin_state)
+    if not state or not state.get("shops"):
+        print("[monthly] refresh produced nothing — keeping previous state")
+        return pin_state
+    return state
+
+
 def main():
     fetch_script = os.path.join(ROOT, "work", "secret_fetch.py")
     live_path = os.path.join(ROOT, "work", "secret_live.json")
     cache_path = os.path.join(ROOT, "work", "secret_cache.json")
 
     pin = os.environ["SECRET_PIN"]
-    restore_week_cache(pin)
+    old = _read_old_payload(pin)
+    restore_week_cache(old)
+    monthly_state = restore_monthly_state(old)
+    if monthly_state is None:
+        try:
+            monthly_state = sfc.load_monthly_state()   # payload 못 읽어도 남아있는 로컬 상태는 살린다
+        except Exception:
+            monthly_state = None
+    now_jst = datetime.now(JST)
+    due, why = monthly_due(monthly_state, now_jst)
+    if due:
+        print(f"[monthly] refresh due — {why}")
+        monthly_state = refresh_monthly(monthly_state) or monthly_state
+    else:
+        print(f"[monthly] cached — {why}")
 
     subprocess.run([sys.executable, fetch_script, "--quick", "--max-age", "5", "--no-images", "--out", live_path], check=True)
     live = json.load(open(live_path, encoding="utf-8"))
@@ -156,10 +234,14 @@ def main():
 
     all_items = cards[7]["items"]  # card8 is full union
     wc = read_week_cache() or {"v": 2, "items": {}}
+    mon_out = monthly_state if isinstance(monthly_state, dict) else None
+    if mon_out:
+        mon_out = {k: mon_out.get(k) for k in ("v", "updated_at", "basis", "areas", "shops", "notes") if mon_out.get(k) is not None}
     payload = json.dumps({
         "updated": now.strftime("%Y-%m-%d %H:%M JST"),
         "week_days": live.get("meta", {}).get("week_days") or [],
         "_wc": wc,
+        "_monthly_shops": mon_out,
         "counts": {
             "green": sum(1 for x in all_items if x["status"] == "🟢"),
             "yellow": sum(1 for x in all_items if x["status"] == "🟡"),
@@ -182,6 +264,10 @@ def main():
             "c": base64.b64encode(ct).decode("ascii"),
         }, f)
     print(f"Wrote secret_enc.json: 9 cards, {len(all_items)} total people")
+    if mon_out:
+        act = [s for s in (live.get("shops") or {}).values() if s.get("active")]
+        print(f"[monthly] payload `_monthly_shops` {mon_out.get('updated_at')} — "
+              f"{len(mon_out.get('shops') or [])} slots, active shops {len(act)}")
 
 
 if __name__ == "__main__":

@@ -212,6 +212,341 @@ def parse_estama_cast(text, shop_key, sid):
     return out
 
 
+# ---------------------------------------------------------------- estama 월간 TOP5 (주 1회 자동 교체)
+# 4지역(梅田 2701·日本橋 2703·難波 2704·心斎橋 2702) 월간 出張 랭킹에서 PR 배너·PR 피드·おすすめ(badge-recommend)를
+# 뺀 실제 1~5위만 골라 '월간 슬롯'으로 관리한다. 수동(fixed) 등록 가게는 건드리지 않는다.
+MONTHLY_AREAS = (('2701', '梅田'), ('2703', '日本橋'), ('2704', '難波'), ('2702', '心斎橋'))
+MONTHLY_RANK_URL = 'https://estama.jp/kansai/ranking/shop/{area}/delivery/monthly/'
+MONTHLY_TOP_N = 5                # 주 1회 갱신 판단은 scripts/run_secret_sync.py 가 한다
+MONTHLY_STATE_PATH = os.path.join(BASE, 'work/secret_monthly.json')
+JST_TZ = datetime.timezone(datetime.timedelta(hours=9))
+
+
+def parse_estama_monthly_top(text, limit=MONTHLY_TOP_N, scan=10):
+    """月間 出張 랭킹 — 실제 순위 배지만. PR 배너(li.list_item_A_wrap 배너)·PR 피드(is_pr_icon)·
+    おすすめ 배지(badge-recommend)는 제외. 영구 제외 업체를 건너뛴 뒤 상위 limit 곳을 채운다(예: 心斎橋 1·5위 제외 → 6위까지)."""
+    i = text.find('<ul class="main_ranking_list">')
+    if i < 0:
+        return []
+    rows = []
+    for part in re.split(r'<li(?=[\s>])', text[i:]):
+        if not part.strip() or 'is_pr_icon' in part or 'badge-recommend' in part:
+            continue
+        b = re.search(r'ranking_list__badge[^>]*>\s*<i>(\d+)</i>', part)
+        if not b:
+            continue
+        rank = int(b.group(1))
+        if rank > scan:
+            continue
+        nm = re.search(r'main_details_shop_name">\s*<a href="https://estama\.jp/shop/(\d+)/">\s*(.*?)\s*</a>',
+                       part, re.S)
+        if not nm:
+            continue
+        sid = nm.group(1)
+        if sid in EXCLUDED_ESTAMA_SHOP_IDS:
+            continue
+        name = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', nm.group(2))).strip()
+        if not name:
+            continue
+        rows.append(dict(rank=rank, shop_id=sid, name=name))
+    rows.sort(key=lambda r: r['rank'])
+    out, seen = [], set()
+    for r in rows:
+        if r['shop_id'] in seen:
+            continue
+        seen.add(r['shop_id'])
+        out.append(r)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def parse_estama_shop_brief(text):
+    """에스타마 샵 페이지(/shop/{sid}/) — 상호·지역·전화·공식 홈페이지·평균 예산·대표 이미지."""
+    out = {}
+    h = re.search(r'<div class="shop-head">\s*<h2>\s*(.*?)\s*</h2>', text, re.S) \
+        or re.search(r'<h1[^>]*>\s*(.*?)\s*</h1>', text, re.S)
+    if h:
+        out['name'] = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', h.group(1))).strip()
+    am = re.findall(r'https://estama\.jp/kansai/shoplist/(\d+)/', text)
+    if am:
+        known = [x for x in am if x in dict(MONTHLY_AREAS)]
+        out['area_id'] = (known or am)[0]
+        out['area'] = dict(MONTHLY_AREAS).get(out['area_id']) or ''
+    tel = re.search(r'tel:([0-9\-]{8,})', text)
+    if tel:
+        out['phone'] = tel.group(1)
+    hp = re.search(r'公式ホームページ\s*</dt>\s*<dd>\s*<a[^>]*href="\s*(https?://[^"]+?)\s*"', text, re.S)
+    if hp:
+        out['official_url'] = hp.group(1)
+    bg = re.search(r'_budget">\s*(\d+)\s*分\s*/\s*([\d,]+)\s*円', text)
+    if bg:
+        out['budget_min'] = int(bg.group(1))
+        out['budget_yen'] = int(bg.group(2).replace(',', ''))
+    img = re.search(r'<img src="(https://img\.estama\.jp/shop_data/\d+/shop/[^"]+)"', text)
+    if img:
+        out['logo_url'] = img.group(1)
+    return out
+
+
+def parse_estama_menu_120(text):
+    """料金ページ(/menu/)의 120분 코스 금액 — '120 分</dt><dd>¥18,000' 형 우선, 없으면 텍스트 표기."""
+    for pat in (r'120\s*分\s*</dt>\s*<dd>\s*&\s*yen;\s*([\d,]+)',
+                r'120\s*分[^<]{0,40}?&\s*yen;\s*([\d,]+)',
+                r'120\s*分[^<]{0,40}?¥\s*([\d,]+)'):
+        m = re.search(pat, text or '')
+        if m:
+            try:
+                return int(m.group(1).replace(',', ''))
+            except Exception:
+                pass
+    return None
+
+
+def detect_official_adapter(url):
+    """공식 사이트 첫 페이지로 우리 공통 CMS 패턴 판별 — gal(/list/profile?uid=)·gcms(/s/profile?lid=)·brand(/therapist/)."""
+    if not url:
+        return None
+    r = http_get(url)
+    if r['status'] != 200 or len(r['text']) < 500:
+        return None
+    t = r['text']
+    host = re.sub(r'^https?://', '', url).split('/')[0]
+    base = 'https://' + host
+    if re.search(r'/list/profile\?uid=\d+', t):
+        return dict(adapter='gal', host=base, cast_url=base + '/list/', schedule_url=base + '/schedule/')
+    if re.search(r'/s/profile\?lid=\d+', t):
+        return dict(adapter='gcms', host=base, cast_url=base + '/s/girl', schedule_url=base + '/s/schedule/')
+    if '/therapist/' in t or '__worktime' in t:
+        return dict(adapter='brand', host=base, cast_url=base + '/therapist/', schedule_url=base + '/schedule/')
+    return None
+
+
+def _host_of(url):
+    return re.sub(r'^https?://', '', (url or '')).split('/')[0].lower()
+
+
+def _unique_shop_key(name, shops, sid):
+    base = re.sub(r'\s+', ' ', name or '').strip() or f'estama {sid}'
+    keys = {s.get('key') for s in shops}
+    return base if base not in keys else f'{base} ({sid})'
+
+
+def _match_by_name(shops, name, area):
+    """에스타마 id가 없는 가게(예: 공식/포털만 등록된 수동 가게)를 랭킹 상호로 찾는다 — 같은 지역만."""
+    n = norm_name(name)
+    best, best_len = None, 0
+    for s in shops:
+        if area and s.get('area') and s.get('area') != area:
+            continue
+        for cand in (s.get('key') or '', s.get('name') or ''):
+            c = norm_name(cand)
+            if len(c) < 4 or c not in n:
+                continue
+            if len(c) > best_len:
+                best, best_len = s, len(c)
+    return best
+
+
+def build_new_monthly_entry(sid, ranking_name, area, cache, notes, log=print):
+    """TOP5에 새로 들어온 가게 — 에스타마 샵 페이지에서 공식 URL·전화·요금을 뽑고 CMS 패턴이면 공식 어댑터로 연결."""
+    r = http_get(f'https://estama.jp/shop/{sid}/', timeout=30)
+    brief = parse_estama_shop_brief(r['text']) if r['status'] == 200 else {}
+    name = brief.get('name') or ranking_name
+    area = brief.get('area') or area
+    official = brief.get('official_url') or ''
+    price120 = None
+    m = http_get(f'https://estama.jp/shop/{sid}/menu/', timeout=30)
+    if m['status'] == 200:
+        price120 = parse_estama_menu_120(m['text'])
+    base_price = price120 or brief.get('budget_yen')
+    shops = cache.get('shops') or []
+    key = _unique_shop_key(name, shops, sid)
+    entry = dict(
+        key=key, name=name, area=area, estama=sid,
+        official_url=official or f'https://estama.jp/shop/{sid}/',
+        phone=brief.get('phone') or '',
+        logo_url=brief.get('logo_url') or '',
+        price_free=base_price, free_course='120분',
+        transport_note='미확인(자동 편입)',
+        adapter='estama', fixed=False, monthly=True, active=True,
+        auto_enrolled=True,
+        enrolled_at=datetime.datetime.now(JST_TZ).strftime('%Y-%m-%dT%H:%M'),
+        source='estama monthly TOP5',
+        price=dict(base=base_price or 0, minutes=120, nomi=0, transport=0, hotel=0,
+                   hotel_included=False,
+                   detail=(f"자동 편입: 에스타마 표기 120분 {base_price:,}엔 (지명·교통 미확인)"
+                           if base_price else '자동 편입: 요금 미확인')),
+    )
+    # 공식 사이트가 이미 다른 가게(같은 브랜드 타 지점 등)에 등록돼 있으면 재적 목록이 겹치므로 estama 어댑터 유지
+    hosts = {_host_of(s.get('official_url')): s for s in shops
+             if _host_of(s.get('official_url')) not in ('', 'estama.jp')}
+    cms = None
+    if official and _host_of(official) in hosts:
+        dup = hosts[_host_of(official)]
+        notes.append(f"{name}({sid}): 공식 {_host_of(official)} 는 '{dup.get('key')}'와 같은 사이트 → estama 어댑터로 편입")
+    elif official:
+        cms = detect_official_adapter(official)
+    if cms:
+        entry.update(adapter=cms['adapter'], cast_url=cms['cast_url'], schedule_url=cms['schedule_url'],
+                     system_url=cms['host'] + '/system/',
+                     official_site=dict(kind=cms['adapter'] + '_cards', host=cms['host'],
+                                        cast=cms['cast_url'], list=cms['cast_url']))
+        notes.append(f"{name}({sid}): 공식 {cms['host']} → {cms['adapter']} 어댑터 자동 연결")
+    log(f"[monthly] +신규 {name}({sid}, {area}) adapter={entry['adapter']} 정가={base_price}")
+    return entry
+
+
+def load_monthly_state():
+    try:
+        with open(MONTHLY_STATE_PATH, encoding='utf-8') as f:
+            d = json.load(f)
+        if isinstance(d, dict) and isinstance(d.get('shops'), list):
+            return d
+    except Exception:
+        pass
+    return None
+
+
+def save_monthly_state(state):
+    try:
+        os.makedirs(os.path.dirname(MONTHLY_STATE_PATH), exist_ok=True)
+        with open(MONTHLY_STATE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(state, f, ensure_ascii=False, indent=1)
+        return True
+    except Exception as e:
+        print(f'[monthly] state write failed: {e}')
+        return False
+
+
+def refresh_monthly_top5(prev=None, sleep_s=1.2, log=print):
+    """4지역 월간 출장 TOP5를 새로 긁어 상태를 만든다. 일부 지역 실패 시 그 지역은 직전 목록 유지,
+    전 지역 실패 시 직전 상태를 그대로 돌려준다(가게가 통째로 내려가지 않게)."""
+    prev = prev if isinstance(prev, dict) else {}
+    prev_areas = prev.get('areas') or {}
+    prev_by_sid = {str(x.get('shop_id')): x for x in (prev.get('shops') or [])}
+    try:
+        cache = load_cache()
+    except Exception:
+        cache = {'shops': [], 'people': []}
+    notes, areas, flat = [], {}, []
+    ok = 0
+    for area_id, area_name in MONTHLY_AREAS:
+        r = http_get(MONTHLY_RANK_URL.format(area=area_id), timeout=30)
+        rows = parse_estama_monthly_top(r['text']) if r['status'] == 200 else []
+        if rows:
+            ok += 1
+        else:
+            old = (prev_areas.get(area_id) or {}).get('shops') or []
+            rows = [dict(rank=x.get('rank'), shop_id=str(x.get('shop_id')), name=x.get('name')) for x in old]
+            notes.append(f"{area_name}: 랭킹 수집 실패({r.get('error') or r['status']}) → "
+                         + ('직전 목록 유지' if rows else '직전 목록 없음'))
+        areas[area_id] = dict(area=area_name, shops=rows, url=MONTHLY_RANK_URL.format(area=area_id))
+        log(f"[monthly] {area_name}({area_id}) {len(rows)}곳: " +
+            ', '.join(f"{x['rank']}.{x['name']}({x['shop_id']})" for x in rows))
+        time.sleep(sleep_s)
+    if ok == 0 and (prev.get('shops')):
+        log('[monthly] 4지역 모두 실패 — 직전 상태 유지')
+        return prev
+    by_sid = {}
+    for s in cache.get('shops') or []:
+        for f in ('estama', 'week_estama', 'estama_cast'):
+            v = str(s.get(f) or '')
+            if v:
+                by_sid.setdefault(v, s)
+    by_key = {s.get('key'): s for s in cache.get('shops') or []}
+    for area_id, area_name in MONTHLY_AREAS:
+        for row in areas[area_id]['shops']:
+            sid = str(row['shop_id'])
+            item = dict(shop_id=sid, name=row['name'], area=area_name, rank=row['rank'], area_id=area_id)
+            shop = by_sid.get(sid) or _match_by_name(cache.get('shops') or [], row['name'], area_name)
+            if shop:
+                item.update(key=shop['key'], matched='curated')
+            else:
+                old = prev_by_sid.get(sid) or {}
+                entry = old.get('entry')
+                if not isinstance(entry, dict) or not entry.get('key'):
+                    entry = build_new_monthly_entry(sid, row['name'], area_name, cache, notes, log)
+                    if entry and entry.get('key') in by_key:
+                        entry.pop('key')
+                        entry = None
+                    if entry:
+                        cache.setdefault('shops', []).append(entry)
+                        by_key[entry['key']] = entry
+                        by_sid[sid] = entry
+                if entry:
+                    item.update(key=entry['key'], matched='new', entry=entry)
+                else:
+                    item.update(matched='unresolved')
+                    notes.append(f"{area_name} {row['rank']}위 {row['name']}({sid}): 자동 편입 실패 — 이번 주 제외")
+            flat.append(item)
+    state = dict(
+        v=1,
+        updated_at=datetime.datetime.now(JST_TZ).strftime('%Y-%m-%dT%H:%M:%S+09:00'),
+        basis='estama monthly delivery TOP5 — 2701/2703/2704/2702, PR(배너·피드·おすすめ) 제외',
+        areas=areas, shops=flat, notes=notes,
+    )
+    save_monthly_state(state)
+    log(f"[monthly] updated {state['updated_at']} — {len(flat)}곳 "
+        f"(curated {sum(1 for x in flat if x.get('matched') == 'curated')}, "
+        f"new {sum(1 for x in flat if x.get('matched') == 'new')})")
+    return state
+
+
+def merge_monthly_shops(cache, state):
+    """캐시의 가게 목록에 월간 슬롯을 적용 — fixed(수동)는 항상 유지, 월간 슬롯만 TOP5로 교체."""
+    if not isinstance(state, dict) or not state.get('shops'):
+        return cache
+    shops = [dict(s) for s in (cache.get('shops') or [])]
+    by_key = {s.get('key'): s for s in shops}
+    by_sid = {}
+    for s in shops:
+        for f in ('estama', 'week_estama', 'estama_cast'):
+            v = str(s.get(f) or '')
+            if v:
+                by_sid.setdefault(v, s)
+    live_keys, live_sids = set(), set()
+    for m in state['shops']:
+        sid = str(m.get('shop_id') or '')
+        s = by_key.get(m.get('key') or '') or by_sid.get(sid) \
+            or _match_by_name(shops, m.get('name') or '', m.get('area') or '')
+        if s is None:
+            entry = m.get('entry')
+            if not isinstance(entry, dict) or not entry.get('key'):
+                continue
+            s = dict(entry)
+            s['key'] = _unique_shop_key(s['key'], shops, sid)
+            shops.append(s)
+            by_key[s['key']] = s
+            by_sid[sid] = s
+        if not s.get('estama'):
+            s['estama'] = sid
+        s['active'] = True
+        s['monthly'] = True
+        s['monthly_rank'] = m.get('rank')
+        if not s.get('fixed'):        # 수동 등록 가게의 상호·지역·랭킹 라벨은 그대로 둔다
+            if m.get('area'):
+                s['area'] = m['area']
+            s['rank_label'] = f"에스타마 {m.get('area') or s.get('area')} 월간 {m.get('rank')}위"
+        live_keys.add(s['key'])
+        live_sids.add(str(s.get('estama') or ''))
+    for s in shops:
+        if s.get('fixed'):
+            s['active'] = True
+            continue
+        if not (s.get('monthly') or s.get('estama')):
+            continue
+        if s['key'] in live_keys or str(s.get('estama') or '') in live_sids:
+            continue
+        if s.get('active'):
+            s['active'] = False
+            s['dropped_at'] = datetime.datetime.now(JST_TZ).strftime('%Y-%m-%d')
+            s['drop_reason'] = 'monthly TOP5 이탈'
+    out = dict(cache)
+    out['shops'] = shops
+    return out
+
+
 def parse_estama_schedule_today(text):
     """出勤表(오늘) — 이름(나이) + 17:00～29:00 형태의 오늘 출근 시프트."""
     out = {}
@@ -1307,6 +1642,18 @@ def main():
             prev_live = None
     quick = want_quick and prev_live is not None
     cache = load_cache()
+    mon = load_monthly_state()
+    if mon:
+        before = {s['key'] for s in cache['shops'] if s.get('active')}
+        cache = merge_monthly_shops(cache, mon)
+        after = {s['key'] for s in cache['shops'] if s.get('active')}
+        print(f"[monthly] TOP5 {mon.get('updated_at')}: active {len(before)}→{len(after)}")
+        if after - before:
+            print(f"[monthly] + 편입: {', '.join(sorted(after - before))}")
+        if before - after:
+            print(f"[monthly] - 제외: {', '.join(sorted(before - after))}")
+        for n in mon.get('notes') or []:
+            print(f"[monthly] note: {n}")
     tasks = build_tasks(cache)
     now0 = datetime.datetime.now()
     wc = load_week_cache()
@@ -1631,6 +1978,8 @@ def main():
     for sp in cache['people']:
         if not sp.get('registered'):
             continue
+        if not (shops.get(sp.get('shop')) or {}).get('active'):
+            continue   # 월간 TOP5 이탈로 내려간 가게의 인물은 싣지 않는다
         key = (sp['shop'], norm_name(sp['name']))
         if key in existing_keys:
             continue
@@ -1654,6 +2003,10 @@ def main():
             rec['today'] = dict(open=op.strip(), close=cl, state='', soldout=False)
         people[f"{sp['shop']}|{norm_name(sp['name'])}"] = rec
         existing_keys.add(key)
+
+    # ---- 월간 슬롯에서 내려간 가게의 사람은 싣지 않는다(빠른 모드가 직전 live 를 재사용할 때 대비)
+    for _k in [k for k, r in people.items() if not (shops.get(r.get('shop')) or {}).get('active')]:
+        people.pop(_k, None)
 
     # ---- 오늘~+6일 출근표 (공식 날짜별 페이지 + 에스타마 주간 뷰 보충)
     week_labels = []

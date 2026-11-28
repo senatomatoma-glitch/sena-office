@@ -2,3 +2,4 @@ work/secret_live.json
 work/secret_week_cache.json
 __pycache__/
 work/secret_fetch_report.json
+work/secret_monthly.json
