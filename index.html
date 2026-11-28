@@ -453,11 +453,16 @@ function renderBriefing() {
 
   const ceoListEl = document.getElementById('ceo-briefing-list');
   if (ceoListEl) {
-    const ceos = DATA.ceo_briefings || [];
+    const ceos = (DATA.ceo_briefings || []).filter(c => (c.title || '').includes('CEO 브리핑'));
     if (!ceos.length) {
       ceoListEl.innerHTML = `<div class="t-card"><div class="t-title">☀️ 아카네 05:10 CEO 브리핑 대기 중</div><div class="t-meta" style="margin-top:6px;">아카네가 <code>AI 실행창구</code> 시트(의견 정리 탭, 제목에 <code>[CEO 브리핑]</code> 포함)에 매일 아침 브리핑을 올리면 5분마다 자동으로 여기 표시돼요!</div></div>`;
     } else {
-      ceoListEl.innerHTML = ceos.map(c => `<div class="t-card"><div class="t-top"><span class="t-num">☀️ ${esc(c.date||'')}</span><span class="badge st-run">${esc(c.author||'아카네')}</span></div><div class="t-title">${esc(c.title)}</div><div class="t-meta" style="margin-top:6px;white-space:pre-wrap;line-height:1.5;">${esc(c.body)}</div></div>`).join('');
+      ceoListEl.innerHTML = ceos.map((c, idx) => {
+        if (idx === 0) {
+          return `<div class="t-card"><div class="t-top"><span class="t-num">☀️ ${esc(c.date||'')}</span><span class="badge st-run">${esc(c.author||'아카네')}</span></div><div class="t-title">${esc(c.title)}</div><div class="t-meta" style="margin-top:6px;white-space:pre-wrap;line-height:1.55;color:#1E293B;">${esc(c.body)}</div></div>`;
+        }
+        return `<details class="t-card" style="cursor:pointer;"><summary style="font-weight:800;font-size:13px;list-style:none;display:flex;justify-content:space-between;"><span>☀️ ${esc(c.title)}</span><span style="color:var(--muted);font-size:11px;">${esc(c.date||'')} ▾</span></summary><div class="t-meta" style="margin-top:8px;white-space:pre-wrap;line-height:1.5;">${esc(c.body)}</div></details>`;
+      }).join('');
     }
   }
 }
