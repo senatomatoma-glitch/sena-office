@@ -802,16 +802,19 @@ function renderMembers() {
   if (gb) {
     const doneCnt = (DATA.done_recent||[]).length;
     const runCnt = DATA.tickets.filter(t=>t.status==='실행 중').length;
+    const opsAll = DATA.tickets.filter(t=>/숙소|청소|에어비앤비|운영/.test(t.area||''));
+    const opsDone = (DATA.done_recent||[]).filter(t=>/숙소|청소|에어비앤비|운영/.test(t.area||''));
+    const opsPct = (opsAll.length + opsDone.length) ? Math.round(opsDone.length * 100 / (opsAll.length + opsDone.length)) : 0;
     gb.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
       <strong style="font-size:13.5px;">📈 사업 목표 현황판</strong>
       <span style="font-size:11px;color:var(--muted);">실행 ${runCnt} · 최근완료 ${doneCnt}건</span>
     </div>
-    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🌿 블로그 월 수익 목표</span><b>목표 ¥100,000</b></div>
-    <div class="goal-bar"><div class="goal-fill" style="width:28%;"></div></div>
-    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🔑 에어비앤비 12월 목표 (5개 호실)</span><b>목표 ¥1,000,000</b></div>
-    <div class="goal-bar"><div class="goal-fill" style="width:62%;"></div></div>
-    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🏢 민트부동산 · 청소 운영</span><b>정상 가동 중</b></div>
-    <div class="goal-bar" style="margin-bottom:2px;"><div class="goal-fill" style="width:85%;"></div></div>`;
+    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🌿 블로그 월 수익 목표</span><b>¥0 / ¥100,000 (수익 집계 전)</b></div>
+    <div class="goal-bar"><div class="goal-fill" style="width:0%;"></div></div>
+    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🔑 에어비앤비 12월 목표 (5개 호실)</span><b>집계 연동 전 (목표 ¥1,000,000)</b></div>
+    <div class="goal-bar"><div class="goal-fill" style="width:0%;"></div></div>
+    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🏢 숙소·운영 티켓 처리율 (최근)</span><b>${opsPct}% (${opsDone.length}/${opsAll.length+opsDone.length}건)</b></div>
+    <div class="goal-bar" style="margin-bottom:2px;"><div class="goal-fill" style="width:${opsPct}%;"></div></div>`;
   }
   const mvp = getMvp();
   document.getElementById('member-cards').innerHTML = Object.keys(ROLES).map(name => {
