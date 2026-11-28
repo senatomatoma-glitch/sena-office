@@ -236,6 +236,7 @@
       <div id="briefing-box" style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:12px 14px;margin-bottom:10px;"></div>
       <div class="subhead"><h3>📋 실시간 접수 큐</h3><span id="map-q-count"></span></div>
       <div class="stat-strip" id="map-stat-strip"></div>
+      <div id="map-member-dash" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px;"></div>
       <div id="map-queue-list"></div>
     </div>
   </div>
@@ -360,7 +361,7 @@ function lockNow() {
   document.getElementById('lock-screen').style.display = 'flex';
 }
 
-let curMapStatus = '전체', curQStatus = '전체', curQOwner = '전체';
+let curMapStatus = '전체', curMapOwner = '전체', curQStatus = '전체', curQOwner = '전체';
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function statusBadge(s) {
   if (!s) return '<span class="badge b-hold">접수</span>';
@@ -397,7 +398,32 @@ function renderMapQueue() {
   document.getElementById('map-stat-strip').innerHTML = Object.entries(counts).map(([k,v]) =>
     `<div class="stat-box ${curMapStatus===k?'active':''}" onclick="curMapStatus='${k}';renderMapQueue();"><div class="stat-num">${v}</div><div class="stat-lbl">${k}</div></div>`
   ).join('');
-  const list = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=> curMapStatus==='전체' ? true : (curMapStatus==='보류' ? (t.status==='보류'||t.status==='접수') : t.status===curMapStatus));
+  const mCards = ['미향', '미유', '아카네', '아이미'].map(name => {
+    const r = ROLES[name] || {emoji:'👤'};
+    const runC = DATA.tickets.filter(t => t.owner === name && t.status === '실행 중').length;
+    const verC = DATA.tickets.filter(t => t.verifier === name && t.status === '검증 중').length;
+    const holdC = DATA.tickets.filter(t => t.owner === name && (t.status === '보류' || t.status === '결정 필요' || t.status === '접수')).length;
+    const totC = DATA.tickets.filter(t => t.owner === name || (t.verifier === name && t.status === '검증 중')).length;
+    const active = curMapOwner === name;
+    return `<div onclick="curMapOwner=(curMapOwner==='${name}'?'전체':'${name}');renderMapQueue();" style="background:${active?'#EEFDF9':'var(--card)'};border:${active?'2px solid var(--accent)':'1px solid var(--border)'};border-radius:14px;padding:9px 11px;cursor:pointer;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+        <strong style="font-size:13px;">${r.emoji} ${name}</strong>
+        <span style="font-size:11px;font-weight:800;color:var(--accent-dark);">${totC}건</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);">
+        <span>실행 <b style="color:#0284C7;">${runC}</b></span>
+        <span>검증 <b style="color:#EA580C;">${verC}</b></span>
+        <span>대기 <b style="color:#64748B;">${holdC}</b></span>
+      </div>
+    </div>`;
+  }).join('');
+  const mDash = document.getElementById('map-member-dash');
+  if (mDash) mDash.innerHTML = mCards;
+  const list = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=> {
+    const okS = curMapStatus==='전체' ? true : (curMapStatus==='보류' ? (t.status==='보류'||t.status==='접수') : t.status===curMapStatus);
+    const okO = curMapOwner==='전체' ? true : (t.owner===curMapOwner || (t.verifier===curMapOwner && t.status==='검증 중'));
+    return okS && okO;
+  });
   document.getElementById('map-queue-list').innerHTML = list.map(({t,i})=>ticketCardHtml(t,i)).join('');
 }
 function renderBriefing() {
