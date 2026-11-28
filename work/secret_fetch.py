@@ -520,10 +520,17 @@ def _brand_items(text):
 
 def _brand_name(chunk):
     nm = re.search(r'(?:<img[^>]*title|<span[^>]*title)="([^"]+)"', chunk)
-    if not nm:
-        nm = re.search(r'__name">\s*([^<(]+?)\s*(?:<span class="[^"]*__age">\((\d+)\))?', chunk)
-        return (nm.group(1).strip(), int(nm.group(2)) if nm.group(2) else None) if nm else (None, None)
-    return nm.group(1).strip(), None
+    if nm:
+        return nm.group(1).strip(), None
+    m = re.search(r'__name">(.*?)</(?:div|span|p)>', chunk, re.S)
+    if not m:
+        return None, None
+    raw = re.sub(r'<[^>]+>', ' ', m.group(1))
+    raw = re.sub(r'\s+', ' ', raw).strip()
+    am = re.search(r'\((\d+)\)\s*$', raw)
+    age = int(am.group(1)) if am else None
+    name = re.sub(r'\(\d+\)\s*$', '', raw).strip()
+    return (name or None), age
 
 
 def parse_brand_therapist(text, host):
@@ -538,18 +545,29 @@ def parse_brand_therapist(text, host):
             am = re.search(r'__age">\s*\((\d+)\)', chunk)
             if am:
                 age_alt = int(am.group(1))
+            else:
+                am2 = re.search(re.escape(name) + r'\s*\((\d+)\)', chunk)
+                if am2:
+                    age_alt = int(am2.group(1))
         style = re.search(r'class="[^"]*__style">\s*([^<]+)<', chunk)
         st = style.group(1) if style else ''
         cup = re.search(r'[BT]\.?\s?\d{2,3}\s?.*?\(([A-K])\)', st) or re.search(r'\(([A-K])\)', st)
         ht = re.search(r'T\.?\s?(\d{2,3})', st) or re.search(r'T\.?\s?(\d{2,3})', chunk)
         img = re.search(r'<img[^>]*src="(https://img\.estama\.jp[^"]+)"', chunk)
-        people[norm_name(name)] = dict(
+        key = norm_name(name)
+        rec = dict(
             name=name, age=age_alt,
             cup=cup.group(1) if cup else None,
             height=int(ht.group(1)) if ht else None,
             new=('新人' in chunk or 'NEW FACE' in chunk or 'new-face-label' in chunk),
             order=idx, img=img.group(1) if img else None,
             url=f'https://{host}/therapist/{pid}/')
+        prev = people.get(key)
+        if prev:
+            for k2, v2 in prev.items():
+                if not rec.get(k2) and v2:
+                    rec[k2] = v2
+        people[key] = rec
         idx += 1
     return people
 
