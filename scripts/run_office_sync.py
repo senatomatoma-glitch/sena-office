@@ -174,6 +174,7 @@ def build_payload(q_rows: list, o_rows: list, d_rows: list, l_rows: list = None)
         "tickets": tickets,
         "opinions": list(reversed(opinions[-12:])),
         "done_recent": list(reversed(done_recent[-15:])),
+        "done_total": len(done_recent),
         "ceo_briefings": list(reversed(ceo_briefings[-7:])),
         "lounge": lounge[-40:],
         "airbnb_monthly": airbnb_monthly,

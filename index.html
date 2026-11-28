@@ -339,6 +339,7 @@
         <button class="f-btn" onclick="setQStatus('실행 중', this)">🔵 실행중</button>
         <button class="f-btn" onclick="setQStatus('검증 중', this)">🟠 검증중</button>
         <button class="f-btn" onclick="setQStatus('보류', this)">⚪ 보류</button>
+        <button class="f-btn" onclick="setQStatus('완료', this)">✅ 완료</button>
       </div>
       <div class="filter-row" id="owner-filters">
         <button class="f-btn active" onclick="setQOwner('전체', this)">전원</button>
@@ -471,6 +472,8 @@ function ticketCardHtml(t, idx) {
   </div>`;
 }
 function renderMapQueue() {
+  const doneInQ = DATA.tickets.filter(t => t.status === '완료').length;
+  const doneAllCnt = DATA.done_total || (DATA.done_recent || []).length;
   const counts = {
     '전체': DATA.tickets.length,
     '결정 필요': DATA.tickets.filter(t => t.status === '결정 필요').length,
@@ -478,23 +481,26 @@ function renderMapQueue() {
     '실행 중': DATA.tickets.filter(t => t.status === '실행 중').length,
     '검증 중': DATA.tickets.filter(t => t.status === '검증 중').length,
     '보류': DATA.tickets.filter(t => t.status === '보류').length,
+    '완료': doneInQ,
   };
-  document.getElementById('map-q-count').innerText = `총 ${DATA.tickets.length}건 (누르면 상세)`;
-  document.getElementById('map-stat-strip').style.gridTemplateColumns = 'repeat(3, 1fr)';
-  document.getElementById('map-stat-strip').innerHTML = Object.entries(counts).map(([k,v]) =>
-    `<div class="stat-box ${curMapStatus===k?'active':''}" onclick="curMapStatus='${k}';renderMapQueue();"><div class="stat-num">${v}</div><div class="stat-lbl">${k}</div></div>`
-  ).join('');
+  document.getElementById('map-q-count').innerText = `큐 ${DATA.tickets.length}건 · 누적 완료 ${doneAllCnt}건`;
+  document.getElementById('map-stat-strip').style.gridTemplateColumns = 'repeat(4, 1fr)';
+  document.getElementById('map-stat-strip').innerHTML = Object.entries(counts).map(([k,v]) => {
+    const sub = k === '완료' ? `<div style="font-size:9px;color:var(--muted);">누적 ${doneAllCnt}</div>` : '';
+    return `<div class="stat-box ${curMapStatus===k?'active':''}" onclick="curMapStatus='${k}';renderMapQueue();"><div class="stat-num">${v}</div><div class="stat-lbl">${k}</div>${sub}</div>`;
+  }).join('');
   const mCards = ['미향', '미유', '아카네', '아이미'].map(name => {
     const r = ROLES[name] || {emoji:'👤'};
     const runC = DATA.tickets.filter(t => t.owner === name && t.status === '실행 중').length;
     const verC = DATA.tickets.filter(t => t.verifier === name && t.status === '검증 중').length;
     const holdC = DATA.tickets.filter(t => t.owner === name && (t.status === '보류' || t.status === '결정 필요' || t.status === '접수')).length;
+    const doneC = (DATA.done_recent || []).filter(d => (d.owner || '').includes(name)).length;
     const totC = runC + verC + holdC;
     const active = curMapOwner === name;
     return `<div onclick="curMapOwner=(curMapOwner==='${name}'?'전체':'${name}');renderMapQueue();" style="background:${active?'#EEFDF9':'var(--card)'};border:${active?'2px solid var(--accent)':'1px solid var(--border)'};border-radius:14px;padding:9px 11px;cursor:pointer;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
         <strong style="font-size:13px;">${r.emoji} ${name}</strong>
-        <span style="font-size:11px;font-weight:800;color:var(--accent-dark);">${totC}건</span>
+        <span style="font-size:11px;font-weight:800;color:var(--accent-dark);">${totC}건 <span style="color:#16A34A;">(✅${doneC})</span></span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);">
         <span>실행 <b style="color:#0284C7;">${runC}</b></span>
