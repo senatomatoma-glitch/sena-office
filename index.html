@@ -371,7 +371,7 @@
     <div class="banner" style="border-radius:14px;margin-bottom:12px;padding:12px 14px;">
       <div class="banner-tag">☕ 팀 실시간 수다 · 아이디어 톡방</div>
       <h2 style="font-size:15px;">MINT Office 라운지</h2>
-      <p style="font-size:11px;">세나 · 미향 · 미유 · 아카네 · 아이미가 자유롭게 잡담하고 아이디어를 던지는 공간이에요.</p>
+      <p style="font-size:11px;">세나 · 미향 · 미유 · 아카네 · 아이미가 자유롭게 잡담하고 아이디어를 던지는 공간이에요.<br>지금 사무실에서 라운지에 들어온 멤버의 실시간 한마디(<b>☕ 라운지 톡</b>)와 시트에 남긴 기록이 시간순으로 같이 올라와요.</p>
     </div>
     <div id="lounge-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
   </div>
@@ -752,6 +752,7 @@ function startLiveOffice() {
           el.classList.add('sipping');
           const d = drinks[Math.floor(Math.random() * drinks.length)];
           chipEl.innerText = `${h.emoji} ${d} ${who}`;
+          addLiveLounge(who);
         } else {
           chipEl.innerText = `${h.emoji} 💬 ${who}`;
         }
@@ -843,10 +844,84 @@ function renderQueue() {
   }).sort((a,b)=>ticketSortRank(a.t)-ticketSortRank(b.t));
   document.getElementById('queue-list').innerHTML = list.map(({t,i})=>ticketCardHtml(t,i)).join('') || '<p class="t-meta" style="text-align:center;padding:24px;">조건에 맞는 티켓이 없어.</p>';
 }
+function loungeParseTs(t) {
+  const m = String(t || '').match(/(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return 0;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
+}
+function loungeShortTitle(t) {
+  const s = String((t && t.title) || '').replace(/^\[[^\]]+\]\s*/, '').replace(/\s+/g, ' ').trim();
+  return s.length > 16 ? s.slice(0, 16) + '…' : s;
+}
+function loungeTicketLabel(t) {
+  const tk = String((t && t.ticket) || '').trim() || '티켓';
+  const ti = loungeShortTitle(t);
+  return ti ? `${tk} ${ti}` : tk;
+}
+function loungePick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function buildLiveLoungeLine(who) {
+  const tickets = (DATA && DATA.tickets) || [];
+  const run = tickets.filter(t => t.owner === who && t.status === '실행 중');
+  const ver = tickets.filter(t => t.verifier === who && t.status === '검증 중');
+  const ms = ((DATA && DATA.mood_stress) || {})[who] || {};
+  const bonus = (window._coffeeRelief || {})[who] || 0;
+  const stress = Math.max(5, Math.min(100, (typeof ms.stress === 'number' ? ms.stress : 25) - bonus));
+  const mood = typeof ms.mood === 'number' ? ms.mood : 80;
+  let subj;
+  if (run.length && ver.length) {
+    subj = loungePick([
+      `${loungeTicketLabel(run[0])} 실행하면서 ${loungeTicketLabel(ver[0])} 검증도 같이 보는 중이야`,
+      `${loungeTicketLabel(run[0])} 마무리하고 ${loungeTicketLabel(ver[0])} 확인하러 잠깐 들렀어`,
+    ]);
+  } else if (run.length) {
+    subj = loungePick([
+      `${loungeTicketLabel(run[0])} 진행 중이야. 잠깐 머리 식히고 다시 달릴게`,
+      `${loungeTicketLabel(run[0])} 하고 있는데 물 한 모금 마시러 왔어`,
+      `${run.length > 1 ? `${loungeTicketLabel(run[0])} 외 ${run.length - 1}건 ` : `${loungeTicketLabel(run[0])} `}달리는 중! 커피 한 잔 하고 계속할게`,
+    ]);
+  } else if (ver.length) {
+    subj = loungePick([
+      `${loungeTicketLabel(ver[0])} 검증 넘어온 거 한 번 훑어보는 중`,
+      `${loungeTicketLabel(ver[0])} 검수하다가 눈 좀 쉬러 왔어`,
+      `${ver.length > 1 ? `${loungeTicketLabel(ver[0])} 외 ${ver.length - 1}건 ` : `${loungeTicketLabel(ver[0])} `}검증 기다리는 중이야`,
+    ]);
+  } else {
+    subj = loungePick([
+      '지금 맡은 티켓은 다 정리해서 잠깐 쉬는 중이야',
+      '큐가 잠잠해서 라운지에서 충전 중 ☕',
+      '오늘 손에 잡은 일 다 끝내고 한숨 돌리는 중~',
+    ]);
+  }
+  const tails = [];
+  if (stress >= 70) tails.push(`스트레스 ${stress}%… 잠깐 숨 고르고 올게`);
+  else if (stress >= 45) tails.push(`스트레스 ${stress}%, 이 정도면 버틸 만해`);
+  else tails.push(`스트레스 ${stress}%면 거의 힐링 모드 😌`);
+  if (bonus > 0) tails.push('대표님 커피 덕에 컨디션 회복 중 ☕');
+  if (mood >= 85) tails.push(`기분 ${mood}점! 오늘 컨디션 좋아 ✨`);
+  return `${subj}. ${loungePick(tails)}`;
+}
+function addLiveLounge(who, minGapMs) {
+  if (!who) return false;
+  const nowMs = Date.now();
+  window._liveLounge = window._liveLounge || [];
+  window._liveLoungeLast = window._liveLoungeLast || {};
+  const gap = typeof minGapMs === 'number' ? minGapMs : 25000;
+  if (nowMs - (window._liveLoungeLast[who] || 0) < gap) return false;
+  window._liveLoungeLast[who] = nowMs;
+  const d = new Date(nowMs);
+  const p2 = n => String(n).padStart(2, '0');
+  const time = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+  window._liveLounge.push({ time: time, name: who, tag: '☕ 라운지 톡', text: buildLiveLoungeLine(who), live: true, ts: nowMs });
+  if (window._liveLounge.length > 20) window._liveLounge = window._liveLounge.slice(-20);
+  renderLounge();
+  return true;
+}
 function renderLounge() {
   const el = document.getElementById('lounge-list');
   if (!el) return;
-  const msgs = [...(DATA.lounge || [])].reverse();
+  const sheetMsgs = ((DATA && DATA.lounge) || []).map((m, i) => ({ m: m, i: i, ts: loungeParseTs(m.time) }));
+  const liveMsgs = (window._liveLounge || []).map((m, i) => ({ m: m, i: i + 100000, ts: (m.ts != null ? m.ts : loungeParseTs(m.time)) }));
+  const msgs = [...sheetMsgs, ...liveMsgs].sort((a, b) => (b.ts - a.ts) || (b.i - a.i)).map(x => x.m);
   if (!msgs.length) {
     el.innerHTML = '<div class="card"><div class="t-meta">아직 올라온 잡담이 없어!</div></div>';
     return;
@@ -860,9 +935,13 @@ function renderLounge() {
   };
   el.innerHTML = msgs.map(m => {
     const p = palette[m.name] || { bg: 'var(--card)', bd: 'var(--border)', badge: esc(m.name||'-') };
-    return `<div style="background:${p.bg};border:1px solid ${p.bd};border-radius:14px;padding:10px 12px;">
+    const isLive = Boolean(m.live);
+    const tagHtml = isLive
+      ? '<span style="background:#FEF3C7;border:1px solid #FCD34D;color:#92400E;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:800;margin-left:4px;">☕ 라운지 톡</span>'
+      : `<span style="background:rgba(255,255,255,0.75);padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;margin-left:4px;">${esc(m.tag||'잡담')}</span>`;
+    return `<div style="background:${p.bg};border:1px ${isLive ? 'dashed' : 'solid'} ${p.bd};border-radius:14px;padding:10px 12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-        <span style="font-size:12px;font-weight:800;">${p.badge} <span style="background:rgba(255,255,255,0.75);padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;margin-left:4px;">${esc(m.tag||'잡담')}</span></span>
+        <span style="font-size:12px;font-weight:800;">${p.badge} ${tagHtml}</span>
         <span style="font-size:10px;color:var(--muted);">${esc((m.time||'').slice(5, 16))}</span>
       </div>
       <div style="font-size:12.5px;line-height:1.5;white-space:pre-wrap;color:#1E293B;">${esc(m.text)}</div>
