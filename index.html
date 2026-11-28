@@ -485,6 +485,12 @@ function ticketCardHtml(t, idx) {
     ${m ? `<div class="t-memo-preview">${m}</div>` : ''}
   </div>`;
 }
+function ticketSortRank(t) {
+  if (t.status === '결정 필요') return 0;
+  if (t.priority === '긴급') return 1;
+  const ord = { '접수': 2, '실행 중': 3, '검증 중': 4, '보류': 5, '완료': 6 };
+  return ord[t.status] !== undefined ? ord[t.status] : 7;
+}
 function renderMapQueue() {
   const doneInQ = DATA.tickets.filter(t => t.status === '완료').length;
   const doneAllCnt = DATA.done_total || (DATA.done_recent || []).length;
@@ -529,7 +535,7 @@ function renderMapQueue() {
     const okS = curMapStatus==='전체' ? true : (t.status===curMapStatus);
     const okO = curMapOwner==='전체' ? true : ((t.owner===curMapOwner && t.status!=='검증 중') || (t.verifier===curMapOwner && t.status==='검증 중'));
     return okS && okO;
-  });
+  }).sort((a,b)=>ticketSortRank(a.t)-ticketSortRank(b.t));
   document.getElementById('map-queue-list').innerHTML = list.map(({t,i})=>ticketCardHtml(t,i)).join('');
 }
 function formatMdRich(txt) {
@@ -812,7 +818,7 @@ function renderQueue() {
     if (curQOwner!=='전체' && t.owner!==curQOwner && t.verifier!==curQOwner) return false;
     if (kw && !`${t.ticket} ${t.title} ${t.memo} ${t.area}`.toLowerCase().includes(kw)) return false;
     return true;
-  });
+  }).sort((a,b)=>ticketSortRank(a.t)-ticketSortRank(b.t));
   document.getElementById('queue-list').innerHTML = list.map(({t,i})=>ticketCardHtml(t,i)).join('') || '<p class="t-meta" style="text-align:center;padding:24px;">조건에 맞는 티켓이 없어.</p>';
 }
 function renderLounge() {
