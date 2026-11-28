@@ -109,6 +109,13 @@ def monthly_due(state, now):
     ts = _ts_jst((state or {}).get("updated_at"))
     if not state or not isinstance(state.get("shops"), list) or not state["shops"] or not ts:
         return True, "no state"
+    want_v = int(getattr(sfc, "MONTHLY_STATE_V", 1) or 1)
+    try:
+        have_v = int(state.get("v") or 1)
+    except Exception:
+        have_v = 1
+    if have_v < want_v:
+        return True, f"schema v{have_v} -> v{want_v} (인기 TOP5 + 접객 TOP3)"
     age = now - ts
     if age >= MONTHLY_TTL:
         return True, f"age {age.total_seconds() / 3600:.1f}h >= 168h"

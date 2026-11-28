@@ -15,19 +15,46 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 _HOST_SEM = {}
 _ESTAMA_BLOCK = {'fails': 0}   # 연속 혜잡 페이지 → 이번 실행에서는 에스타마 주간 뷰 중단
+_ESTAMA_PAUSE = [0]           # 혜잡으로 쉬었다 재시도한 횟수
+# r.jina.ai 는 무료 한도(분당 요청 수)가 있어 동시에 몰리면 403/429 를 준다 — 동시 2개·간격 유지로 편다
+_JINA_SEM = threading.Semaphore(int(os.environ.get('SECRET_JINA_PAR', '2')))
+_JINA_GAP = float(os.environ.get('SECRET_JINA_GAP', '2.2'))
+_JINA_LOCK = threading.Lock()
+_JINA_LAST = [0.0]
+
+
+def _jina_curl(url, timeout=45):
+    """r.jina.ai 전용 호출 — 시작 간격을 벌리고 동시 접속을 제한한다(무료 rate limit 회피)."""
+    with _JINA_SEM:
+        with _JINA_LOCK:
+            wait = _JINA_LAST[0] + _JINA_GAP - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            _JINA_LAST[0] = time.time()
+        return _curl(JINA + url, timeout)
 
 UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 '
       '(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1')
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JINA = 'https://r.jina.ai/'
 # 직접 접속이 막히는 호스트 → 리더 프록시 우선
-BLOCKED_HOSTS = {'www.genkaya.net', 'genkaya.net', 'hihouden.net', 'sumeragi-spa.com',
-                 'sukesukekan.com'}
+BLOCKED_HOSTS = {'www.genkaya.net', 'genkaya.net', 'hihouden.net', 'sumeragi-spa.com', 'mikado-spa.com',
+                 'www.sumeragi-spa.com', 'www.mikado-spa.com', 'sukesukekan.com'}
 CACHE_PATH = os.path.join(BASE, 'work/secret_cache.json')
 WEEK_CACHE_PATH = os.path.join(BASE, 'work/secret_week_cache.json')
 WEEK_DAYS = int(os.environ.get('SECRET_WEEK_DAYS', '7'))   # 오늘 포함 7일(오늘~+6)
+# 7일치 날짜별 페이지를 주는 CMS — 기본 베이스 URL(가게 schedule_url 이 있으면 그것을 우선)
+WEEK_BASE_URL = {
+    'genkaya': 'https://www.genkaya.net/s/schedule',
+    'hihouden': 'https://hihouden.net/schedule',
+    'kimiiro': 'https://kimiiro-dress-spa.com/schedule',
+    'superhappy': 'https://super-happy.net/schedule',
+}
+# 오늘(day 0) 출근표를 다른 경로로 안 받는 가게 — 날짜별 페이지에 day=0 을 포함시킨다
+DAY0_ADAPTERS = {'cream'}
 WEEK_TTL = int(os.environ.get('SECRET_WEEK_TTL', '1500'))  # 내일 이후 스케줄 캐시(초)
 WDAY = ['월', '화', '수', '목', '금', '토', '일']
+JST_TZ = datetime.timezone(datetime.timedelta(hours=9))
 PHOTO_DIR = os.path.join(BASE, 'downloads/secret-photos')
 LOGO_DIR = os.path.join(BASE, 'downloads/secret-logos')
 
@@ -48,6 +75,13 @@ def _curl(url, timeout=25):
         return '', time.time() - t0, -1
 
 
+def _busy_body(host, txt):
+    """에스타마가 트래픽 과다(900) 페이지를 200으로 돌려줄 때가 있다 — 성공으로 치지 않는다."""
+    if host != 'estama.jp' or not txt:
+        return False
+    return ('Server Too Busy' in txt) or ('Error 900' in txt) or ('混み合' in txt)
+
+
 def http_get(url, timeout=20):
     """직접 → curl → r.jina.ai 순 폴백. dict(method, status, text, bytes, seconds, error)"""
     host = re.sub(r'^https?://', '', url).split('/')[0]
@@ -59,7 +93,8 @@ def http_get(url, timeout=20):
         order = ['urllib', 'curl', 'jina']
     # 호스트별 동시 접속 제한 (에스타마는 병렬 과다 시 900 혼잡 페이지)
     _HOST_SEM.setdefault(host, threading.Semaphore(3 if host == 'estama.jp' else 8))
-    for attempt in range(2):
+    attempts = 4 if host == 'estama.jp' else 2
+    for attempt in range(attempts):
         if host == 'estama.jp':
             time.sleep(0.3 + (hash(threading.get_ident() + attempt) % 5) * 0.12)
         with _HOST_SEM[host]:
@@ -73,36 +108,55 @@ def http_get(url, timeout=20):
                             data = r.read()
                         txt = data.decode('utf-8', errors='replace')
                         if len(txt) > 3000:
-                            out.update(method='urllib', status=200, text=txt, bytes=len(data),
-                                       seconds=time.time() - t0)
-                            return out
-                        out['error'] = 'short body'
+                            if _busy_body(host, txt):
+                                out['error'] = 'estama busy (900)'
+                            else:
+                                out.update(method='urllib', status=200, text=txt, bytes=len(data),
+                                           seconds=time.time() - t0)
+                                return out
+                        else:
+                            out['error'] = 'short body'
                     except Exception as e:
                         out['error'] = f'{type(e).__name__}: {e}'
                 elif m == 'curl':
                     txt, sec, rc = _curl(url, timeout)
-                    if rc == 0 and len(txt) > 3000:
+                    if rc == 0 and len(txt) > 3000 and not _busy_body(host, txt):
                         out.update(method='curl', status=200, text=txt, bytes=len(txt.encode('utf-8')),
                                    seconds=time.time() - t0)
                         return out
-                    out['error'] = (out.get('error') or '') + f' | curl rc={rc}' + (' Could not resolve' if rc == 6 else '')
+                    if rc == 0 and _busy_body(host, txt):
+                        out['error'] = 'estama busy (900)'
+                    else:
+                        out['error'] = (out.get('error') or '') + f' | curl rc={rc}' + (' Could not resolve' if rc == 6 else '')
                 elif m == 'jina':
-                    txt, sec, rc = _curl(JINA + url, max(timeout, 45))
-                    if rc == 0 and len(txt) > 3000 and 'Markdown Content' in txt:
-                        out.update(method='jina', status=200, text=txt, bytes=len(txt.encode('utf-8')),
-                                   seconds=time.time() - t0)
-                        return out
-                    out['error'] = (out.get('error') or '') + f' | jina rc={rc}'
+                    for jtry in range(2):
+                        txt, sec, rc = _jina_curl(url, max(timeout, 45))
+                        if rc == 0 and len(txt) > 3000 and 'Markdown Content' in txt:
+                            out.update(method='jina', status=200, text=txt, bytes=len(txt.encode('utf-8')),
+                                       seconds=time.time() - t0)
+                            return out
+                        head = (txt or '')[:400]
+                        out['error'] = (out.get('error') or '') + f' | jina rc={rc}'
+                        if '429' in head or 'Consecutive error' in head or 'OperationNotAllowed' in head:
+                            time.sleep(6 + jtry * 6)      # 한도 초과 → 잠깐 쉬고 한 번 더
+                            out['error'] += ' (rate-limited)'
+                            continue
+                        break
                 if m != 'jina' and ('name resolution' in (out.get('error') or '') or 'Could not resolve' in (out.get('error') or '')):
                     continue  # DNS가 죽어도 jina 프록시로는 읽히는 호스트가 있으므로 jina는 계속 시도
         if host == 'estama.jp' and out.get('error'):
-            time.sleep(3.0)
+            time.sleep(5.0 + attempt * 3.0)
     out['seconds'] = time.time() - t0
     out['status'] = 0
     return out
 
 
 # ---------------------------------------------------------------- utils
+def jst_now():
+    """항상 JST(UTC+9) 기준 현재 시각(naive) — GitHub Actions 러너가 UTC여도 날짜·요일이 하루 밀리지 않게."""
+    return datetime.datetime.now(JST_TZ).replace(tzinfo=None)
+
+
 def norm_name(s):
     if not s:
         return ''
@@ -217,14 +271,24 @@ def parse_estama_cast(text, shop_key, sid):
 # 뺀 실제 1~5위만 골라 '월간 슬롯'으로 관리한다. 수동(fixed) 등록 가게는 건드리지 않는다.
 MONTHLY_AREAS = (('2701', '梅田'), ('2703', '日本橋'), ('2704', '難波'), ('2702', '心斎橋'))
 MONTHLY_RANK_URL = 'https://estama.jp/kansai/ranking/shop/{area}/delivery/monthly/'
-MONTHLY_TOP_N = 5                # 주 1회 갱신 판단은 scripts/run_secret_sync.py 가 한다
+MONTHLY_SERVICE_URL = 'https://estama.jp/kansai/ranking/shop/service/{area}/delivery/monthly/'
+MONTHLY_TOP_N = 5                # 4지역 出張 人気 월간 TOP5 — 주 1회 갱신 판단은 scripts/run_secret_sync.py 가 한다
+MONTHLY_SERVICE_N = 3            # 4지역 出張 おもてなし(접객) 월간 TOP3 — 인기 TOP5와 함께 편입
+MONTHLY_STATE_V = 2              # v1: 인기 TOP5만 → v2: 인기 TOP5 + 접객 TOP3 (v1 상태는 다음 실행에서 자동 재갱신)
+MONTHLY_BASIS = 'estama 4지역 出張 인기 월간 TOP5 + 出張 おもてなし(접객) 월간 TOP3 — PR(배너·피드·おすすめ)·풋케어 등 비멘즈에스테·영구제외 업체 제외'
+# おもてなし 랭킹에 섞여 드는 비멘즈에스테 업소(풋케어·네일 등) — 이름으로 걸러 낸다(세나 지시 2026-11-28)
+NON_ESTHE_NAME_RE = re.compile(r'フット|ネイル|脱毛|整体|足つぼ|リフレ')
 MONTHLY_STATE_PATH = os.path.join(BASE, 'work/secret_monthly.json')
-JST_TZ = datetime.timezone(datetime.timedelta(hours=9))
+
+
+def _monthly_blocked(name, sid):
+    """영구 제외 업체(EXCLUDED_ESTAMA_SHOP_IDS) + 비멘즈에스테(풋케어·네일 등) 업소."""
+    return str(sid) in EXCLUDED_ESTAMA_SHOP_IDS or bool(NON_ESTHE_NAME_RE.search(name or ''))
 
 
 def parse_estama_monthly_top(text, limit=MONTHLY_TOP_N, scan=10):
-    """月間 出張 랭킹 — 실제 순위 배지만. PR 배너(li.list_item_A_wrap 배너)·PR 피드(is_pr_icon)·
-    おすすめ 배지(badge-recommend)는 제외. 영구 제외 업체를 건너뛴 뒤 상위 limit 곳을 채운다(예: 心斎橋 1·5위 제외 → 6위까지)."""
+    """月間 랭킹 — 실제 순위 배지만. PR 배너(li.list_item_A_wrap 배너)·PR 피드(is_pr_icon)·
+    おすすめ 배지(badge-recommend)는 제외. 영구 제외·비멘즈에스테 업체를 건너뛴 뒤 상위 limit 곳을 채운다(예: 心斎橋 1·5위 제외 → 6위까지)."""
     i = text.find('<ul class="main_ranking_list">')
     if i < 0:
         return []
@@ -243,10 +307,8 @@ def parse_estama_monthly_top(text, limit=MONTHLY_TOP_N, scan=10):
         if not nm:
             continue
         sid = nm.group(1)
-        if sid in EXCLUDED_ESTAMA_SHOP_IDS:
-            continue
         name = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', nm.group(2))).strip()
-        if not name:
+        if not name or _monthly_blocked(name, sid):
             continue
         rows.append(dict(rank=rank, shop_id=sid, name=name))
     rows.sort(key=lambda r: r['rank'])
@@ -420,8 +482,8 @@ def save_monthly_state(state):
 
 
 def refresh_monthly_top5(prev=None, sleep_s=1.2, log=print):
-    """4지역 월간 출장 TOP5를 새로 긁어 상태를 만든다. 일부 지역 실패 시 그 지역은 직전 목록 유지,
-    전 지역 실패 시 직전 상태를 그대로 돌려준다(가게가 통째로 내려가지 않게)."""
+    """4지역 出張 랭킹을 새로 긁어 상태를 만든다 — 인기 월간 TOP5 + おもてなし(접객) 월간 TOP3.
+    일부 지역/랭킹 실패 시 그 지역은 직전 목록 유지, 전부 실패 시 직전 상태를 그대로 돌려준다(가게가 통째로 내려가지 않게)."""
     prev = prev if isinstance(prev, dict) else {}
     prev_areas = prev.get('areas') or {}
     prev_by_sid = {str(x.get('shop_id')): x for x in (prev.get('shops') or [])}
@@ -432,19 +494,39 @@ def refresh_monthly_top5(prev=None, sleep_s=1.2, log=print):
     notes, areas, flat = [], {}, []
     ok = 0
     for area_id, area_name in MONTHLY_AREAS:
-        r = http_get(MONTHLY_RANK_URL.format(area=area_id), timeout=30)
-        rows = parse_estama_monthly_top(r['text']) if r['status'] == 200 else []
-        if rows:
-            ok += 1
-        else:
-            old = (prev_areas.get(area_id) or {}).get('shops') or []
-            rows = [dict(rank=x.get('rank'), shop_id=str(x.get('shop_id')), name=x.get('name')) for x in old]
-            notes.append(f"{area_name}: 랭킹 수집 실패({r.get('error') or r['status']}) → "
-                         + ('직전 목록 유지' if rows else '직전 목록 없음'))
-        areas[area_id] = dict(area=area_name, shops=rows, url=MONTHLY_RANK_URL.format(area=area_id))
-        log(f"[monthly] {area_name}({area_id}) {len(rows)}곳: " +
-            ', '.join(f"{x['rank']}.{x['name']}({x['shop_id']})" for x in rows))
-        time.sleep(sleep_s)
+        old_area = prev_areas.get(area_id) or {}
+        lists = {}
+        for src, url_tpl, limit in (('popular', MONTHLY_RANK_URL, MONTHLY_TOP_N),
+                                    ('service', MONTHLY_SERVICE_URL, MONTHLY_SERVICE_N)):
+            url = url_tpl.format(area=area_id)
+            r = http_get(url, timeout=30)
+            rows = parse_estama_monthly_top(r['text'], limit=limit, scan=40) if r['status'] == 200 else []
+            if rows:
+                ok += 1
+            else:
+                old = (old_area.get('service_shops' if src == 'service' else 'shops') or [])
+                old = [x for x in old if (x.get('src') or 'popular') == src]
+                rows = [dict(rank=x.get('rank'), shop_id=str(x.get('shop_id')), name=x.get('name')) for x in old]
+                notes.append(f"{area_name} {'접객' if src == 'service' else '인기'}: 랭킹 수집 실패({r.get('error') or r['status']}) → "
+                             + ('직전 목록 유지' if rows else '직전 목록 없음'))
+            for x in rows:
+                x['src'] = src
+            lists[src] = dict(rows=rows, url=url)
+            log(f"[monthly] {area_name}({area_id}) {'접객' if src == 'service' else '인기'} {len(rows)}곳: " +
+                ', '.join(f"{x['rank']}.{x['name']}({x['shop_id']})" for x in rows))
+            time.sleep(sleep_s)
+        # 인기 TOP5 먼저, 접객 TOP3는 인기에 없는 가게만 뒤에 붙인다(같은 가게는 인기 라벨 유지)
+        merged, seen = [], set()
+        for src in ('popular', 'service'):
+            for x in lists[src]['rows']:
+                sid = str(x['shop_id'])
+                if sid in seen:
+                    continue
+                seen.add(sid)
+                merged.append(dict(x, src=src))
+        areas[area_id] = dict(area=area_name, shops=merged,
+                              service_shops=[x for x in merged if x.get('src') == 'service'],
+                              url=lists['popular']['url'], service_url=lists['service']['url'])
     if ok == 0 and (prev.get('shops')):
         log('[monthly] 4지역 모두 실패 — 직전 상태 유지')
         return prev
@@ -458,7 +540,8 @@ def refresh_monthly_top5(prev=None, sleep_s=1.2, log=print):
     for area_id, area_name in MONTHLY_AREAS:
         for row in areas[area_id]['shops']:
             sid = str(row['shop_id'])
-            item = dict(shop_id=sid, name=row['name'], area=area_name, rank=row['rank'], area_id=area_id)
+            item = dict(shop_id=sid, name=row['name'], area=area_name, rank=row['rank'], area_id=area_id,
+                        src=row.get('src') or 'popular')
             shop = by_sid.get(sid) or _match_by_name(cache.get('shops') or [], row['name'], area_name)
             if shop:
                 item.update(key=shop['key'], matched='curated')
@@ -478,14 +561,16 @@ def refresh_monthly_top5(prev=None, sleep_s=1.2, log=print):
                     notes.append(f"{area_name} {row['rank']}위 {row['name']}({sid}): 자동 편입 실패 — 이번 주 제외")
             flat.append(item)
     state = dict(
-        v=1,
+        v=MONTHLY_STATE_V,
         updated_at=datetime.datetime.now(JST_TZ).strftime('%Y-%m-%dT%H:%M:%S+09:00'),
-        basis='estama monthly delivery TOP5 — 2701/2703/2704/2702, PR(배너·피드·おすすめ) 제외',
+        basis=MONTHLY_BASIS,
         areas=areas, shops=flat, notes=notes,
     )
     save_monthly_state(state)
     log(f"[monthly] updated {state['updated_at']} — {len(flat)}곳 "
-        f"(curated {sum(1 for x in flat if x.get('matched') == 'curated')}, "
+        f"(인기 {sum(1 for x in flat if x.get('src') == 'popular')}, "
+        f"접객 {sum(1 for x in flat if x.get('src') == 'service')}, "
+        f"curated {sum(1 for x in flat if x.get('matched') == 'curated')}, "
         f"new {sum(1 for x in flat if x.get('matched') == 'new')})")
     return state
 
@@ -524,7 +609,8 @@ def merge_monthly_shops(cache, state):
         if not s.get('fixed'):        # 수동 등록 가게의 상호·지역·랭킹 라벨은 그대로 둔다
             if m.get('area'):
                 s['area'] = m['area']
-            s['rank_label'] = f"에스타마 {m.get('area') or s.get('area')} 월간 {m.get('rank')}위"
+            _src = '접객' if m.get('src') == 'service' else '인기'
+            s['rank_label'] = f"에스타마 {m.get('area') or s.get('area')} 출장 {_src} 월간 {m.get('rank')}위"
         live_keys.add(s['key'])
         live_sids.add(str(s.get('estama') or ''))
     for s in shops:
@@ -1130,6 +1216,107 @@ def parse_superhappy_happy_schedule(text):
     return parse_superhappy_schedule(seg or text)
 
 
+def parse_belle_schedule(text):
+    """osaka-bellefemme.com /schedule?p=N — <li class="list__item"> 카드의 <h3>이름(나이)</h3>·<p class="time">HH:MM-HH:MM</p>."""
+    out = {}
+    for b in re.split(r'<li class="list__item"', text)[1:]:
+        nm = re.search(r'<h3>\s*([^<>()]{1,20}?)\s*\((\d+)\)\s*</h3>', b)
+        tm = re.search(r'<p class="time">\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*</p>', b)
+        if not nm or not tm:
+            continue
+        name = nm.group(1).replace('\u3000', ' ').strip()
+        if not name:
+            continue
+        out[norm_name(name)] = dict(open=tm.group(1), close=tm.group(2), state='出勤', soldout=False)
+    return out
+
+
+# ------------------------------------------------ 皇SPA / 帝SPA (동일 CMS, jina 경유)
+# 두 사이트는 같은 명부를 쓰고 카드마다 소속 라벨(皇SPA / 帝SPA)을 달아 준다.
+# 그래서 라벨로 걸러 각 가게 사람만 담는다(출근표 페이지에도 두 가게가 섞여 있다).
+SPA2_LABEL = {'sumeragi-spa.com': '皇SPA', 'www.sumeragi-spa.com': '皇SPA',
+              'mikado-spa.com': '帝SPA', 'www.mikado-spa.com': '帝SPA'}
+SPA2_LABELS = ('皇SPA', '帝SPA')
+# 出勤情報: '[皇SPA 瀬戸 れいか(22) 身長160cm (G) 17:00 - 23:00](https://sumeragi-spa.com/profile?lid=363)'
+# 帝SPA 쪽은 '(G) / 17:00 - 23:00 【予約受付中】 …' 처럼 슬래시·태그가 더 붙는다.
+SPA2_COMPACT = re.compile(
+    r'\[\s*(皇SPA|帝SPA)\s+([^\[\]\n()]{1,24}?)\s*\((\d{2})\)\s*身長\s*(\d{2,3})\s*cm\s*\(([A-K])\)\s*(?:/\s*)?'
+    r'(\d{1,2}:\d{2})\s*[-～~]\s*(\d{1,2}:\d{2})[^\]]{0,120}\]\((https?://[^)\s]+/profile\?lid=(\d+))\)')
+SPA2_LABEL_LINE = re.compile(r'^\s*(皇SPA|帝SPA)\s*$', re.M)
+SPA2_PROFILE_LINK = re.compile(
+    r'\[!\[Image[^\]]*?:\s*([^\]]*?)\]\(([^)\s]+)\)[^\]]{0,24}\]\((https?://[^)\s]+/profile\?lid=(\d+))\)')
+
+
+def _spa2_label(host):
+    return SPA2_LABEL.get((host or '').lower().strip('/'), '')
+
+
+def parse_spa2_girl(text, host):
+    """皇SPA/帝SPA 公式 /girl — 카드별 소속 라벨(皇SPA/帝SPA)로 걸러 이름·나이·키·컵·사진·프로필 URL.
+    카드 구조(jina markdown): [![Image N: 이름](사진)](프로필) → (SNS 아이콘들) → '皇SPA' → '이름(나이)' → '身長160cm (G)'."""
+    want = _spa2_label(host)
+    text = text or ''
+    people = {}
+    idx = 0
+    for m in SPA2_LABEL_LINE.finditer(text):
+        label = m.group(1)
+        if want and label != want:
+            continue
+        after = text[m.end():m.end() + 300]
+        nm = re.search(r'^\s*([^\n()]{1,24}?)\s*\((\d{2})\)\s*$', after, re.M)
+        sz = re.search(r'身長\s*(\d{2,3})\s*cm\s*\(([A-K])\)', after)
+        if not nm or not sz:
+            continue
+        name = nm.group(1).strip()
+        if not name or name.isdigit() or '【' in name:
+            continue
+        before = text[max(0, m.start() - 2000):m.start()]
+        prof = list(SPA2_PROFILE_LINK.finditer(before))
+        if not prof:
+            continue
+        alt, img, url, lid = prof[-1].groups()
+        key = norm_name(name)
+        rec = dict(name=name, age=int(nm.group(2)), cup=sz.group(2), height=int(sz.group(1)),
+                   new=bool(re.search(r'\)NEW\]|NEW\]', before[-120:])),
+                   img=img if img.startswith('http') else None,
+                   url=url, pid=lid, order=idx)
+        prev = people.get(key)
+        if prev:
+            for k2, v2 in prev.items():
+                if not rec.get(k2) and v2 is not None:
+                    rec[k2] = v2
+        people[key] = rec
+        idx += 1
+    return people
+
+
+def parse_spa2_schedule(text, host=None):
+    """皇SPA/帝SPA 出勤情報(/schedule?day=N) — 소속 라벨로 걸러 {이름: {open, close}}."""
+    want = _spa2_label(host)
+    out = {}
+    for m in SPA2_COMPACT.finditer(text or ''):
+        label, name, _age, _ht, _cup, op, cl, _url = m.groups()[:8]
+        if want and label != want:
+            continue
+        name = name.strip()
+        if not name or '【' in name:
+            continue
+        out[norm_name(name)] = dict(open=op, close=cl, state='出勤', soldout=False)
+    return out
+
+
+def parse_spa2_rank(text):
+    """皇SPA/帝SPA /ranking — 'No.N' 다음 줄의 '이름(나이)'. 첫 등장 순위만 쓴다."""
+    out, seen = [], set()
+    for m in re.finditer(r'No\.(\d+)\s*\n+\s*([^\n()]{1,24}?)\s*\((\d{2})\)', text or ''):
+        rank, name = int(m.group(1)), m.group(2).strip()
+        if not name or rank in seen:
+            continue
+        seen.add(rank)
+        out.append(dict(rank=rank, name=name))
+    return out
+
+
 def parse_kimiiro_schedule(text):
     return _today_map(parse_kimiiro(text))
 
@@ -1174,6 +1361,54 @@ def parse_next_shift(text, now, days=None):
     return out
 
 
+def parse_estama_cast_md(text):
+    """에스타마 점포 セラピスト一覧을 r.jina.ai 마크다운으로 받았을 때의 대체 파서.
+    카드 = '![Image N: 이름](사진)' → (오늘 출근 'HH:MM～HH:MM') → '#### 이름(나이)' → 'T.159 B.90(G) W.58 H.88' → '[VIEW DETAIL](.../cast/PID/)'. """
+    out = {}
+    _idx = 0
+    for part in re.split(r'(?=\[?!\[Image \d+:)', text or ''):
+        img = re.search(r'\[?!\[Image \d+:\s*([^\]]*?)\]\(([^)\s]+)\)', part)
+        nm = re.search(r'#{1,6}\s*([^\n()]{1,24}?)\s*\((\d{2})\)', part)
+        sz = re.search(r'T\.?\s*(\d{2,3})\s*/?\s*B\.?\s*(\d{2,3})?\s*\(([A-K])\)', part)
+        det = re.search(r'/cast/(\d+)/\)', part)
+        if not (img and nm and det):
+            continue
+        pid, name = det.group(1), nm.group(1).strip()
+        if not name or '【' in name:
+            continue
+        tm = re.search(r'(\d{1,2}:\d{2})\s*[～~]\s*(\d{1,2}:\d{2})', part)
+        rec = dict(name=name, age=int(nm.group(2)),
+                   cup=sz.group(3) if sz else None,
+                   height=int(sz.group(1)) if sz else None,
+                   new=('新人' in part or 'NEW' in part[:400]),
+                   order=_idx, img=img.group(2) if img.group(2).startswith('http') else None,
+                   url=f'https://estama.jp/shop/{pid}/',
+                   today=dict(open=tm.group(1), close=tm.group(2)) if tm else None)
+        out[pid] = rec
+        _idx += 1
+    return out
+
+
+def parse_estama_cast_alias(text):
+    """에스타마 점포 セラピスト一覧의 '【이름】캐치프레이즈' 표기 → {정규화 캐치프레이즈: 이름}.
+    일부 가게(예: 俺の家)는 주간 출근표에 캐치프레이즈만 쓰고 이름을 안 적어서, 이 대조표로 이름을 살린다.
+    HTML(직접) / 마크다운(r.jina.ai) 둘 다에서 뽑는다."""
+    out = {}
+    raws = [re.sub(r'<[^>]+>', '', m.group(1)).strip()
+            for m in re.finditer(r'<h4 class="therapist_name tc">\s*(.*?)\s*</h4>', text or '', re.S)]
+    raws += [m.group(1).strip() for m in re.finditer(r'#{2,6}\s*((?:【[^】]{1,16}】[^\n(]{1,24}?))\s*\(\d{2}\)', text or '')]
+    for raw in raws:
+        mm = re.match(r'^【([^】]{1,16})】\s*(.+)$', raw)
+        if not mm:
+            continue
+        name = re.sub(r'[（(]\s*\d+\s*[)）]', '', mm.group(1)).strip()
+        label = re.sub(r'[（(]\s*\d+\s*[)）]', '', mm.group(2)).strip()
+        if name and label:
+            out[norm_name(label)] = name
+            out[norm_name(label).rstrip('◎')] = name
+    return out
+
+
 def parse_estama_week(text, now):
     """에스타마 出勤表 'セラピスト別' 주간 뷰 → {normname: [7일치 'HH:MM~HH:MM' 또는 '']}."""
     out = {}
@@ -1186,6 +1421,12 @@ def parse_estama_week(text, now):
             start = datetime.date(year, mm, dd)
         except ValueError:
             start = now.date()
+    # 기간 시작일~+6일의 실제 날짜를 먼저 만들어 두고, 라벨의 '일(day)' 숫자로 열을 찾는다.
+    # (전에는 start.year/start.month 로만 날짜를 만들어 말을 넘기는 12/1~ 열이 통째로 빠졌다)
+    dates = [start + datetime.timedelta(days=i) for i in range(WEEK_DAYS)]
+    day_to_idx = {}
+    for i, d in enumerate(dates):
+        day_to_idx.setdefault(d.day, i)
     for block in re.split(r'<div class="cast-schedule-row">', text)[1:]:
         nm = re.search(r'class="cast-name">\s*(.*?)\s*(?:\(\d+\))?\s*</span>', block, re.S)
         if not nm:
@@ -1201,10 +1442,7 @@ def parse_estama_week(text, now):
             dnum = re.search(r'label-pc">\s*(\d{1,2})', row)
             idx = ri
             if dnum:
-                try:
-                    idx = (datetime.date(start.year, start.month, int(dnum.group(1))) - now.date()).days
-                except ValueError:
-                    idx = ri
+                idx = day_to_idx.get(int(dnum.group(1)), ri)
             if idx < 0 or idx >= WEEK_DAYS or len(tms) < 2:
                 continue
             wk[idx] = f"{tms[0].zfill(5) if len(tms[0]) == 4 else tms[0]}~{tms[1]}"
@@ -1215,7 +1453,7 @@ def parse_estama_week(text, now):
 
 def fetch_estama_week(sid, timeout=25):
     """에스타마 出勤表 POST /post/shop_schedule_ctrl (view=week) — 쿠키+CSRF 필요."""
-    if _ESTAMA_BLOCK['fails'] >= 3:
+    if _ESTAMA_BLOCK['fails'] >= 5:
         return dict(url=f'https://estama.jp/shop/{sid}/schedule/ [week]', method=None, status=0,
                     text='', bytes=0, seconds=0.0, error='estama congested (skipped this run)')
     page = f'https://estama.jp/shop/{sid}/schedule/'
@@ -1311,6 +1549,7 @@ RANK_PARSERS = {
     'pranking': parse_rank_pranking,
     'rplace': parse_rank_rplace,
     'superhappy': parse_rank_superhappy,
+    'spa2': parse_spa2_rank,
 }
 
 
@@ -1335,7 +1574,7 @@ def parse_brand_day_labels(text):
     return out
 
 
-NEW_ADAPTERS = ('gal', 'gcms', 'suke')
+NEW_ADAPTERS = ('gal', 'gcms', 'suke', 'spa2')
 
 OFFICIAL_PARSERS = {
     'brand': parse_brand_therapist,
@@ -1353,6 +1592,7 @@ OFFICIAL_PARSERS = {
     'gal': parse_gal,
     'gcms': parse_gcms,
     'suke': parse_suke,
+    'spa2': parse_spa2_girl,
 }
 
 
@@ -1447,12 +1687,27 @@ def build_tasks(cache):
         if shop.get('adapter') == 'superhappy':
             tasks.append(dict(kind='official_schedule', shop=shop['key'], adapter='superhappy',
                               url='https://super-happy.net/schedule'))
+        if shop.get('adapter') == 'belle':
+            # 오늘 출근표 = /schedule (p 없음)
+            tasks.append(dict(kind='official_schedule', shop=shop['key'], adapter='belle',
+                              url=shop.get('schedule_url') or 'https://osaka-bellefemme.com/schedule'))
+        if shop.get('adapter') == 'spa2' and shop.get('schedule_url'):
+            # 오늘 출근표 = /schedule?day=0 (皇SPA·帝SPA가 섞여 있어 소속 라벨로 걸러 낸다)
+            tasks.append(dict(kind='official_schedule', shop=shop['key'], adapter='spa2',
+                              url=re.sub(r'[?&]day=\d+', '', shop['schedule_url']).rstrip('/') + '?day=0'))
         if shop.get('adapter') == 'femmefatale':
             tasks.append(dict(kind='official', shop=shop['key'], adapter='femmefatale',
                               url='https://femmefatale-osaka.com/'))
         if shop.get('adapter') == 'orenoie':
             tasks.append(dict(kind='official_schedule', shop=shop['key'], adapter='orenoie',
                               url='https://ore-no-ie.com/schedule.php'))
+            # 공식 사이트가 응답하지 않을 때(SSL 타임아웃) 오늘 출근표는 에스타마 것으로 메운다
+            if shop.get('estama'):
+                tasks.append(dict(kind='estama_schedule', shop=shop['key'], sid=shop['estama'],
+                                  url=f"https://estama.jp/shop/{shop['estama']}/schedule/"))
+                # 주간표가 캐치프레이즈만 쓰는 가게 → '【이름】캐치프레이즈' 대조표로 이름을 복원
+                tasks.append(dict(kind='estama_alias', shop=shop['key'], sid=shop['estama'],
+                                  url=f"https://estama.jp/shop/{shop['estama']}/cast/"))
     return tasks
 
 
@@ -1498,6 +1753,10 @@ def _parse_week_day(text, r):
         return parse_kimiiro_schedule(text)
     if ad == 'cream':
         return parse_cream_schedule(text)
+    if ad == 'belle':
+        return parse_belle_schedule(text)
+    if ad == 'spa2':
+        return parse_spa2_schedule(text, re.sub(r'^https?://', '', r['url']).split('/')[0])
     if ad == 'gcms':
         return parse_gcms_schedule(text, re.sub(r'^https?://', '', r['url']).split('/')[0])
     if ad == 'genkaya':
@@ -1510,7 +1769,7 @@ def _parse_week_day(text, r):
 def week_spec(shop):
     """가게별 7일치 출근표 소스 설계.
     - {'estama': sid}  : 에스타마 出勤表 'セラピスト別' 주간 뷰 (7일 한 번에)
-    - {'days': [(i, url)], 'adapter': ..., 'section': ...} : 공식 날짜별 페이지 (i=1..)
+    - {'days': [(i, url)], 'adapter': ..., 'section': ...} : 공식 날짜별 페이지 (i=0..)
     둘 다 있을 수 있고, 공식 우선 + 에스타마 보충으로 합쳐진다."""
     spec = {}
     adapter = shop.get('adapter')
@@ -1526,24 +1785,26 @@ def week_spec(shop):
         for i in range(1, WEEK_DAYS):
             days.append((i, f"{base}/d{i + 1}/"))
         spec['adapter'] = 'brand'
-    elif adapter == 'sumeragi' and sched:
-        base = sched.rstrip('/') + '/schedule'
+    elif adapter in ('sumeragi', 'spa2') and sched:
+        base = re.sub(r'/schedule/?$', '/schedule', sched.rstrip('/'))
         for i in range(1, WEEK_DAYS):
-            days.append((i, f"{base}/d{i + 1}/"))
-        spec['adapter'] = 'sumeragi'
-    elif adapter in ('superhappy', 'kimiiro', 'cream', 'gcms', 'genkaya', 'hihouden'):
-        if adapter == 'hihouden':
-            base = 'https://hihouden.net/schedule'
-        elif adapter == 'genkaya':
-            base = 'https://www.genkaya.net/s/schedule'
-        elif adapter == 'cream':
-            base = sched or shop.get('cast_url') or ''
-        else:
-            base = sched or ''
+            days.append((i, f"{base}?day={i}"))
+        spec['adapter'] = adapter
+    elif adapter in ('superhappy', 'kimiiro', 'cream', 'gcms', 'genkaya', 'hihouden', 'gal', 'suke', 'belle'):
+        base = WEEK_BASE_URL.get(adapter) or sched or (shop.get('cast_url') or '')
+        if adapter in ('kimiiro', 'superhappy'):
+            base = re.sub(r'/schedule/?$', '/schedule', base.rstrip('/'))   # /schedule/?day= 는 404 (/schedule?day= 만 유효)
+        if adapter == 'belle':
+            base = re.sub(r'/schedule/?$', '/schedule', base.rstrip('/'))
         if base:
-            sep = '&' if '?' in base else '?'
-            for i in range(1, WEEK_DAYS):
-                days.append((i, f"{base}{sep}day={i}"))
+            if adapter == 'belle':
+                for i in range(0, WEEK_DAYS):
+                    days.append((i, base if i == 0 else f"{base}?p={i}"))
+            else:
+                sep = '&' if '?' in base else '?'
+                start = 0 if adapter in DAY0_ADAPTERS else 1
+                for i in range(start, WEEK_DAYS):
+                    days.append((i, f"{base}{sep}day={i}"))
             spec['adapter'] = adapter
             if adapter == 'superhappy':
                 spec['section'] = 'happy'
@@ -1652,7 +1913,7 @@ def main():
         for n in mon.get('notes') or []:
             print(f"[monthly] note: {n}")
     tasks = build_tasks(cache)
-    now0 = datetime.datetime.now()
+    now0 = jst_now()
     wc = load_week_cache()
     week_todo, week_cached, week_stale = plan_week_tasks(cache, wc, now0)
     if quick:
@@ -1691,14 +1952,19 @@ def main():
             tag = r.get('shop') or r.get('area')
             print(f"  [{r.get('kind')}] {tag}: {r['method'] or 'FAIL'} {r['seconds']:.1f}s {r['bytes']}b")
     # 에스타마 주간 뷰는 혜잡 페이지가 뜨지 않도록 순차·건수 제한으로
-    cap = int(os.environ.get('SECRET_ESTAMA_WEEK_CAP', '20'))
+    cap = int(os.environ.get('SECRET_ESTAMA_WEEK_CAP', '30'))
     for t in estama_wk[:cap]:
+        if _ESTAMA_BLOCK['fails'] >= 5 and _ESTAMA_PAUSE[0] < 2:
+            print('  [estama_week] congested — 20초 쉬고 재시도')
+            time.sleep(20)
+            _ESTAMA_BLOCK['fails'] = 0
+            _ESTAMA_PAUSE[0] += 1
+        elif _ESTAMA_BLOCK['fails'] >= 5:
+            print('  [estama_week] 계속 혜잡 — 남은 가게는 이번 실행 건너뜀')
+            break
         r = run(t)
         results.append(r)
         print(f"  [{r.get('kind')}] {t['shop']}: {r['method'] or 'FAIL'} {r['seconds']:.1f}s {r['bytes']}b")
-        if _ESTAMA_BLOCK['fails'] >= 3:
-            print('  [estama_week] congested — remaining shops skipped this run')
-            break
         time.sleep(0.8)
     elapsed = time.time() - t_start
 
@@ -1717,6 +1983,7 @@ def main():
         shop_status = {}  # shop_key -> dict(ms_ok, official_ok, note)
     schedules = {}    # shop -> {normname: {open, close, state, soldout}}
     day_schedules = {}  # shop -> {day_no: {normname: {...}}}
+    alias_map = {}     # shop -> {캐치프레이즈: 이름} (에스타마 주간표 이름 복원용)
     week_maps = {}    # shop -> {day_no: {normname: 'HH:MM~HH:MM'}} / {'estama': {normname: [7]}} / {'next': {...}}
     img_downloads = []
 
@@ -1734,6 +2001,8 @@ def main():
         k = r.get('kind')
         if k == 'estama_shop':
             ps = parse_estama_cast(txt, r['shop'], r['sid'])
+            if not ps and 'VIEW DETAIL' in txt:
+                ps = parse_estama_cast_md(txt)      # r.jina.ai 마크다운 대체 경로(에스타마 900 혼잡 시)
             st = shop_status.setdefault(r['shop'], {})
             st['estama_cast'] = len(ps)
             st['has_review'] = ('shop-nav-box__review' in txt) or bool(re.search(r'口コミ[^<]{0,20}\d+\s*件', txt))
@@ -1868,14 +2137,23 @@ def main():
             fn = {'genkaya': parse_genkaya_schedule, 'hihouden': parse_hihouden_schedule,
                   'superhappy': parse_superhappy_schedule, 'orenoie': parse_orenoie_schedule,
                   'gal': parse_gal_schedule, 'gcms': parse_gcms_schedule, 'suke': parse_suke_schedule,
+                  'belle': parse_belle_schedule,
                   }.get(r['adapter'])
-            if fn is None:
+            if r['adapter'] == 'spa2':
+                host = re.sub(r'^https?://', '', r['url']).split('/')[0]
+                sched = parse_spa2_schedule(txt, host)
+            elif fn is None:
                 continue
-            sched = fn(txt)
+            else:
+                sched = fn(txt)
             schedules.setdefault(r['shop'], {}).update(
                 {nm: dict(open=s['open'], close=s['close'], state=s.get('state', '出勤'),
                           soldout='完売' in (s.get('state') or '')) for nm, s in sched.items()})
             rep['parsed'] = len(sched)
+        elif k == 'estama_alias':
+            am = parse_estama_cast_alias(txt)
+            alias_map.setdefault(r['shop'], {}).update(am)
+            rep['parsed'] = len(am)
         elif k == 'estama_week':
             wk = parse_estama_week(txt, now0)
             week_slot(r['shop'])['estama'] = wk
@@ -1894,6 +2172,13 @@ def main():
             rep['parsed'] = len(sched or {})
 
     # ---- apply schedules (all parsed, race-free)
+    # 에스타마 출근표가 캐치프레이즈만 쓰는 가게(俺の家 등) → '【이름】캐치프레이즈' 대조표로 이름을 되살린다
+    for _shk, _am in alias_map.items():
+        if not _am:
+            continue
+        _sch = schedules.get(_shk)
+        if _sch:
+            schedules[_shk] = {_am.get(_nm, _nm): _v for _nm, _v in _sch.items()}
     for shop, sched in schedules.items():
         for rec in people.values():
             if rec['shop'] != shop:
@@ -1904,7 +2189,7 @@ def main():
 
     # ---- 다음 출근일 (브랜드 공식 /schedule/d2~d4/)
     WDAY = ['월', '화', '수', '목', '금', '토', '일']
-    now = datetime.datetime.now()
+    now = jst_now()
     for shop, days in day_schedules.items():
         for rec in people.values():
             if rec['shop'] != shop:
@@ -1947,7 +2232,7 @@ def main():
 
     # ---- enrich with seed (정적 캐시) & registered list
     seed_by = {(p['shop'], norm_name(p['name'])): p for p in cache['people']}
-    now = datetime.datetime.now()
+    now = jst_now()
     for key, rec in list(people.items()):
         sp = seed_by.get((rec['shop'], norm_name(rec['name'])))
         if sp:
@@ -2027,11 +2312,23 @@ def main():
             for nm, s in pm.items():
                 cur.setdefault(nm, s)
     week_stats = {}
+    # 에스타마 주간표가 캐치프레이즈만 쓰는 가게는 '【이름】캐치프레이즈' 대조표로 이름을 되살린다
+    for _shk, _slot in week_maps.items():
+        _am = alias_map.get(_shk)
+        if _am and isinstance(_slot.get('estama'), dict):
+            _slot['estama'] = {_am.get(_nm, _nm): _wk for _nm, _wk in _slot['estama'].items()}
     for rec in people.values():
         nm = norm_name(rec['name'])
         slot = week_maps.get(rec['shop']) or {}
         wk = [''] * WEEK_DAYS
         t = rec.get('today') or {}
+        # 오늘 출근표를 다른 소스로 못 받은 가게(cream·belle 등)는 날짜별 day=0 페이지로 메운다
+        if not (t.get('open') and t.get('close')):
+            s0 = (slot.get(0) or {}).get(nm)
+            if s0 and '~' in s0:
+                op, cl = s0.split('~')[:2]
+                rec['today'] = dict(open=op, close=cl, state='出勤', soldout=False)
+                t = rec['today']
         if t.get('open') and t.get('close'):
             wk[0] = f"{t['open']}~{t['close']}"
         for i in range(1, WEEK_DAYS):
@@ -2041,6 +2338,10 @@ def main():
         for i, s in enumerate((slot.get('estama') or {}).get(nm, [])[:WEEK_DAYS]):
             if s and not wk[i]:
                 wk[i] = s
+        if wk[0] and not (rec.get('today') or {}).get('open'):
+            # 오늘 출근표를 따로 안 주는 가게(에스타마 주간표만 있는 lirica 등) → 주간표 0열로 오늘을 메운다
+            _op, _cl = wk[0].split('~')[:2]
+            rec['today'] = dict(open=_op, close=_cl, state='出勤', soldout=False)
         nx = (slot.get('next') or {}).get(nm)
         if nx and not wk[nx[0]]:
             wk[nx[0]] = nx[1]

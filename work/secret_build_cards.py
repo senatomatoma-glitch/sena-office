@@ -600,7 +600,7 @@ def main():
             out_dir = args[i + 1]
     live = json.load(open(os.path.join(BASE, live_path), encoding='utf-8'))
     cache = json.load(open(os.path.join(BASE, 'work/secret_cache.json'), encoding='utf-8'))
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).replace(tzinfo=None)
     t0 = datetime.datetime.now()
 
     b = build(live, cache, now)
