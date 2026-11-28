@@ -932,9 +932,10 @@ function saveCheckLocal(id, checked) {
   if (typeof renderMapQueue === 'function') renderMapQueue();
   if (typeof renderQueue === 'function') renderQueue();
 }
+const DEFAULT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwLZAHg-VLsHHbxjFXyEsH7eb0AaQxCGwD6un_UnlnipNm4blXbWLCrBpj48j0GWbp3/exec';
 function configWebhook() {
-  const cur = localStorage.getItem('sena_webhook_url') || '';
-  const u = prompt('Google 시트 Apps Script 웹앱 URL을 붙여넣어 주세요 (1회만 설정):', cur);
+  const cur = localStorage.getItem('sena_webhook_url') || DEFAULT_WEBHOOK_URL;
+  const u = prompt('Google 시트 Apps Script 웹앱 URL을 붙여넣어 주세요 (기본 연동됨):', cur);
   if (u !== null) {
     localStorage.setItem('sena_webhook_url', u.trim());
     alert(u.trim() ? '✅ 시트 연동 URL이 저장되었어요!' : 'URL이 비워졌어요.');
@@ -946,7 +947,7 @@ async function sendSenaFeedback(kind, id, owner) {
   const checked = chkEl ? chkEl.checked : true;
   const comment = cmtEl ? cmtEl.value.trim() : '';
   saveCheckLocal(id, checked);
-  let url = localStorage.getItem('sena_webhook_url') || '';
+  let url = localStorage.getItem('sena_webhook_url') || DEFAULT_WEBHOOK_URL;
   if (!url) {
     configWebhook();
     url = localStorage.getItem('sena_webhook_url') || '';
