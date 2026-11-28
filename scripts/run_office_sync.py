@@ -461,9 +461,10 @@ def main():
         cleaning = {"error": str(e)[:200], "days": []}
 
     payload = build_payload(q_rows, o_rows, d_rows, l_rows, cleaning)
+    clean_for_hash = {k: v for k, v in (payload["cleaning"] or {}).items() if k != "generated"}
     core_hash = hashlib.sha256(
         json.dumps(
-            {"tickets": payload["tickets"], "opinions": payload["opinions"], "done_recent": payload["done_recent"], "lounge": payload["lounge"], "cleaning": payload["cleaning"]},
+            {"tickets": payload["tickets"], "opinions": payload["opinions"], "done_recent": payload["done_recent"], "lounge": payload["lounge"], "cleaning": clean_for_hash},
             ensure_ascii=False,
             sort_keys=True,
         ).encode("utf-8")
