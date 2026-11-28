@@ -725,14 +725,23 @@ function startLiveOffice() {
   if (liveTimer) clearInterval(liveTimer);
   const names = Object.keys(homes);
   const drinks = ['☕', '🧋', '🍵', '🥤'];
+  const getStress = n => {
+    const base = ((DATA.mood_stress || {})[n] || {}).stress ?? 25;
+    const rel = (window._coffeeRelief || {})[n] || 0;
+    return Math.max(5, base - rel);
+  };
   const step = () => {
-    const who = names[Math.floor(Math.random() * names.length)];
+    const stressed = names.filter(n => n !== '미향' && getStress(n) >= 55);
+    const who = (stressed.length && Math.random() < 0.6)
+      ? stressed[Math.floor(Math.random() * stressed.length)]
+      : names[Math.floor(Math.random() * names.length)];
     const el = document.getElementById('wk-' + who);
     const chipEl = document.getElementById('wkc-' + who);
     const sayEl = document.getElementById('wks-' + who);
     if (!el || !sayEl || !chipEl) return;
     const h = homes[who];
-    const goHome = Math.random() < 0.40;
+    const st = getStress(who);
+    const goHome = (who !== '미향' && st >= 55) ? (Math.random() < 0.15) : (Math.random() < 0.40);
     el.classList.remove('sipping');
     el.classList.add('walking');
     chipEl.innerText = `${h.emoji} 🚶‍♀️ ${who}`;
@@ -745,16 +754,45 @@ function startLiveOffice() {
         chipEl.innerText = `${h.emoji} 💻 ${who}`;
       }, 2300);
     } else {
-      const sp = spots[Math.floor(Math.random() * spots.length)];
+      const sp = (who !== '미향' && st >= 55 && Math.random() < 0.78)
+        ? spots[0]
+        : spots[Math.floor(Math.random() * spots.length)];
       el.style.left = (sp.x + (Math.random() * 5 - 2.5)) + '%';
       el.style.top = (sp.y + (Math.random() * 4 - 2)) + '%';
-      sayEl.innerText = sp.lines[Math.floor(Math.random() * sp.lines.length)];
+      sayEl.innerText = (sp.name === '라운지' && st >= 55)
+        ? `😮‍💨 스트레스 ${st}%… 미향이랑 라운지 수다!`
+        : sp.lines[Math.floor(Math.random() * sp.lines.length)];
+      if (sp.name === '라운지' && who !== '미향' && st >= 55) {
+        const mh = document.getElementById('wk-미향');
+        const mhc = document.getElementById('wkc-미향');
+        const mhs = document.getElementById('wks-미향');
+        if (mh && mhc && mhs) {
+          mh.classList.remove('sipping');
+          mh.classList.add('walking');
+          mhc.innerText = '💙 🚶‍♀️ 미향';
+          mh.style.left = (spots[0].x - 3 + Math.random() * 3) + '%';
+          mh.style.top = (spots[0].y + Math.random() * 3) + '%';
+          mhs.innerText = `${who}아, 잠깐 쉬면서 수다 떨자!`;
+          mhs.classList.add('show');
+          setTimeout(() => {
+            mh.classList.remove('walking');
+            mh.classList.add('sipping');
+            mhc.innerText = '💙 ☕ 미향';
+          }, 2300);
+          setTimeout(() => { if (mhs) mhs.classList.remove('show'); }, 3400);
+        }
+      }
       setTimeout(() => {
         el.classList.remove('walking');
         if (sp.name === '라운지') {
           el.classList.add('sipping');
           const d = drinks[Math.floor(Math.random() * drinks.length)];
           chipEl.innerText = `${h.emoji} ${d} ${who}`;
+          if (who !== '미향' && st >= 55) {
+            window._coffeeRelief = window._coffeeRelief || {};
+            window._coffeeRelief[who] = Math.min(40, (window._coffeeRelief[who] || 0) + 5);
+            renderMapBubbles();
+          }
           addLiveLounge(who);
         } else {
           chipEl.innerText = `${h.emoji} 💬 ${who}`;
