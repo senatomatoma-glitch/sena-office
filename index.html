@@ -400,8 +400,8 @@
   </div>
   <div id="tab-clean" class="section">
     <div class="banner" style="border-radius:14px;margin-bottom:12px;padding:12px 14px;">
-      <div class="banner-tag">🧹 클리닝 배정 · 오늘 / 내일</div>
-      <h2 style="font-size:15px;">오늘·내일 청소 배정 한눈에</h2>
+      <div class="banner-tag">🧹 클리닝 배정 · 오늘부터 7일</div>
+      <h2 style="font-size:15px;">1주일 청소 배정 한눈에</h2>
       <p style="font-size:11px;">클리닝 관리 시트(shiwa·safe·OOKINI)와 Schedule for MINT Clearning을 5분마다 읽어서 담당·호실을 모아 보여줘요.</p>
     </div>
     <div id="clean-list"></div>
@@ -998,7 +998,7 @@ function renderCleaning() {
     const srcHtml = src ? `<div class="t-meta" style="margin-top:4px;font-size:10.5px;">출처 ${src}</div>` : '';
     return `<div class="card" style="cursor:default;">
       <div class="card-head">
-        <strong>🗓️ ${esc(d.label)} ${esc((d.date || '').slice(5).replace('-', '/'))} (${esc(d.dow)})</strong>
+        <strong>🗓️ ${d.label ? esc(d.label) + ' ' : ''}${esc((d.date || '').slice(5).replace('-', '/'))} (${esc(d.dow)})</strong>
         <span class="badge ${d.total ? 'b-run' : 'b-hold'}">총 ${d.total || 0}방</span>
       </div>
       ${tbl}${offHtml}${srcHtml}

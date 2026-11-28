@@ -121,14 +121,16 @@ def build_roster(token: str, dates: list) -> dict:
     return out
 
 
-def build_cleaning(token: str, today: str, tomorrow: str) -> dict:
-    """오늘·내일 청소 배정(호실·담당)과 스태프별 방 수. 시트는 읽기만 한다."""
-    targets = [today, tomorrow]
+def build_cleaning(token: str, today: str, days_count: int = 7) -> dict:
+    """당일 기준 1주일(7일) 청소 배정(호실·담당)과 스태프별 방 수. 시트는 읽기만 한다."""
+    base_dt = datetime.strptime(today, "%Y-%m-%d")
+    targets = [(base_dt + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days_count)]
     days = []
-    for d in targets:
+    for i, d in enumerate(targets):
+        label = "오늘" if i == 0 else ("내일" if i == 1 else ("모레" if i == 2 else ""))
         days.append({
             "date": d,
-            "label": "오늘" if d == today else "내일",
+            "label": label,
             "dow": KOR_DOW[datetime.strptime(d, "%Y-%m-%d").weekday()],
             "total": 0,
             "staff": [],
@@ -455,7 +457,7 @@ def main():
 
     now_jst = datetime.now(JST)
     try:
-        cleaning = build_cleaning(token, now_jst.strftime("%Y-%m-%d"), (now_jst + timedelta(days=1)).strftime("%Y-%m-%d"))
+        cleaning = build_cleaning(token, now_jst.strftime("%Y-%m-%d"), 7)
     except Exception as e:
         print("CLEANING_ERR", e)
         cleaning = {"error": str(e)[:200], "days": []}
