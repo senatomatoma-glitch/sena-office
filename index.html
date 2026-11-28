@@ -109,29 +109,36 @@
     50% { transform: translate(-50%, -50%) translateY(-3px); }
   }
   .walker {
-    position: absolute; transform: translate(-50%, -50%);
+    position: absolute; transform: translate(-50%, -88%);
     z-index: 5; pointer-events: auto; cursor: pointer;
-    transition: left 2.3s cubic-bezier(.45,.05,.55,.95), top 2.3s cubic-bezier(.45,.05,.55,.95);
-    display: flex; flex-direction: column; align-items: center;
+    height: 11.5%;
+    transition: left 2.1s cubic-bezier(.45,.05,.55,.95), top 2.1s cubic-bezier(.45,.05,.55,.95), opacity 0.35s ease;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
   }
-  .walker-chip {
-    background: rgba(255,255,255,0.96); border: 1.5px solid var(--accent);
-    border-radius: 999px; padding: 3px 8px; font-size: 10px; font-weight: 800;
-    box-shadow: 0 3px 10px rgba(0,0,0,.18); white-space: nowrap;
-    display: flex; align-items: center; gap: 3px;
-    animation: walkBounce 1.4s ease-in-out infinite;
+  .walker-img {
+    height: 100%; width: auto; display: block;
+    filter: drop-shadow(0 4px 5px rgba(0,0,0,0.28));
+    transform-origin: bottom center;
+    animation: idleBreath 2.4s ease-in-out infinite;
+    transition: transform 0.25s ease;
   }
-  .walker.walking .walker-chip {
-    animation: walkStep 0.38s ease-in-out infinite;
-    border-color: #0284C7;
-  }
-  .walker.sipping .walker-chip {
-    animation: sipBob 1.1s ease-in-out infinite;
-    border-color: #D97706; background: #FFFBEB;
+  .walker.flip .walker-img { transform: scaleX(-1); }
+  .walker.walking .walker-img { animation: walkStep 0.36s ease-in-out infinite; }
+  .walker.flip.walking .walker-img { animation: walkStepFlip 0.36s ease-in-out infinite; }
+  .walker.sipping .walker-img { animation: sipBob 1.1s ease-in-out infinite; }
+  .walker-drink { position: absolute; right: -10px; top: 34%; font-size: 13px; display: none; filter: drop-shadow(0 2px 3px rgba(0,0,0,.2)); }
+  .walker.sipping .walker-drink { display: block; }
+  @keyframes idleBreath {
+    0%, 100% { transform: translateY(0px) scaleY(1); }
+    50% { transform: translateY(-1.5px) scaleY(1.02); }
   }
   @keyframes walkStep {
     0%, 100% { transform: translateY(0px) rotate(-4deg); }
     50% { transform: translateY(-4px) rotate(4deg); }
+  }
+  @keyframes walkStepFlip {
+    0%, 100% { transform: scaleX(-1) translateY(0px) rotate(-4deg); }
+    50% { transform: scaleX(-1) translateY(-4px) rotate(4deg); }
   }
   @keyframes sipBob {
     0%, 100% { transform: translateY(0px) rotate(0deg); }
@@ -280,7 +287,7 @@
       <p>방 캐릭터를 누르면 담당 업무가, 아래 접수 큐 카드를 누르면 상세 메모까지 전부 열려요.</p>
     </div>
     <div class="map-wrap">
-      <img src="office.png?v=12" alt="MINT Office 3층+지하 대회의실 빌딩">
+      <img src="office-empty.png?v=13" alt="MINT Office 3층+지하 대회의실 빌딩">
       <div class="sky-fx" id="sky-fx"></div>
       <button class="head-bubble boss" id="hb-세나" style="left:27%;top:5%;" onclick="showTab('approval', document.querySelectorAll('.tab-btn')[2])">👑 승인 0건</button>
       <button class="head-bubble" id="hb-미향" style="left:27%;top:29%;" onclick="openMember('미향')">💬 ...</button>
@@ -561,70 +568,93 @@ function startLiveOffice() {
   const layer = document.getElementById('live-walkers');
   if (!layer) return;
   const homes = {
-    '미향': { x: 16, y: 39, emoji: '💙', say: ['오늘도 화이팅!', '일 잘 돌아가나~', '대표님 보고 가야지'] },
-    '미유': { x: 84, y: 39, emoji: '🌿', say: ['블로그 초안 쓰는 중', 'GA4 체크!', '아아 한 잔~'] },
-    '아카네': { x: 16, y: 61, emoji: '🔑', say: ['체크인 확인!', '메일함 이상 무', '게스트 후기 5점~'] },
-    '아이미': { x: 84, y: 61, emoji: '📊', say: ['수익화 분석 중', '교차검증 완료!', 'SEO 체크~'] },
+    '세나': { x: 27, y: 18, floor: 3, sprite: 'sprites/sena.png', boss: true, say: ['오늘도 화이팅!', '다들 잘 돌아가나~', '커피 한 잔 할까'] },
+    '미향': { x: 31, y: 41, floor: 2, sprite: 'sprites/mihyang.png', say: ['오늘도 화이팅!', '접수 큐 체크 중~', '대표님 보고 가야지'] },
+    '미유': { x: 70, y: 41, floor: 2, sprite: 'sprites/miyu.png', say: ['블로그 초안 쓰는 중', 'GA4 체크!', '아아 한 잔~'] },
+    '아카네': { x: 28, y: 64, floor: 1, sprite: 'sprites/akane.png', say: ['체크인 확인!', '메일함 이상 무', '게스트 후기 5점~'] },
+    '아이미': { x: 69, y: 64, floor: 1, sprite: 'sprites/aimi.png', say: ['수익화 분석 중', '교차검증 완료!', 'SEO 체크~'] },
   };
+  const doorY = { 3: 19, 2: 42, 1: 65, 0: 87 };
   const spots = [
-    { name: '라운지', x: 72, y: 15, lines: ['☕ 라운지 휴식 중', '🍰 마카롱 꿀맛!', '💡 새 아이디어 떠올랐다!', '🌿 잠깐 쉬어가자~'] },
-    { name: '대표실', x: 36, y: 15, lines: ['👑 대표님 보고 중!', '✨ 잘 진행되고 있어요', '📋 확인 부탁드려요!'] },
-    { name: '대회의실', x: 50, y: 84, lines: ['🤝 지하 대회의실 회의 중!', '📊 주간 전략 맞추는 중', '💡 다 같이 아이디어 회의!'] },
-    { name: '미향방', x: 32, y: 38, lines: ['💬 미향아 잠깐만!', '🙌 오늘도 고생해!'] },
-    { name: '미유방', x: 67, y: 38, lines: ['🌿 미유야 글 잘 써져?', '📸 사진 예쁘다!'] },
-    { name: '아카네방', x: 32, y: 60, lines: ['🔑 아카네 예약 어때?', '📬 메일 확인 중?'] },
-    { name: '아이미방', x: 67, y: 60, lines: ['📊 아이미 숫자 어때?', '💡 전략 회의하자!'] },
+    { name: '라운지', x: 71, y: 18, floor: 3, lines: ['☕ 라운지 휴식 중', '🍰 마카롱 꿀맛!', '💡 새 아이디어 떠올랐다!', '🌿 잠깐 쉬어가자~'] },
+    { name: '대표실', x: 35, y: 18, floor: 3, lines: ['👑 대표님 보고 중!', '✨ 잘 진행되고 있어요', '📋 확인 부탁드려요!'] },
+    { name: '대회의실', x: 50, y: 87, floor: 0, lines: ['🤝 지하 대회의실 회의 중!', '📊 주간 전략 맞추는 중', '💡 다 같이 아이디어 회의!'] },
+    { name: '미향방', x: 34, y: 41, floor: 2, lines: ['💬 미향아 잠깐만!', '🙌 오늘도 고생해!'] },
+    { name: '미유방', x: 66, y: 41, floor: 2, lines: ['🌿 미유야 글 잘 써져?', '📸 사진 예쁘다!'] },
+    { name: '아카네방', x: 34, y: 64, floor: 1, lines: ['🔑 아카네 예약 어때?', '📬 메일 확인 중?'] },
+    { name: '아이미방', x: 66, y: 64, floor: 1, lines: ['📊 아이미 숫자 어때?', '💡 전략 회의하자!'] },
   ];
-  layer.innerHTML = Object.entries(homes).map(([n, h]) =>
-    `<div class="walker" id="wk-${n}" style="left:${h.x}%;top:${h.y}%;" onclick="openMember('${n}')">
+  const state = {};
+  layer.innerHTML = Object.entries(homes).map(([n, h]) => {
+    state[n] = { x: h.x, y: h.y, floor: h.floor, busy: false };
+    const clickFn = h.boss ? 'openBoss()' : `openMember('${n}')`;
+    return `<div class="walker" id="wk-${n}" style="left:${h.x}%;top:${h.y}%;" onclick="${clickFn}">
       <div class="walker-say" id="wks-${n}"></div>
-      <div class="walker-chip" id="wkc-${n}">${h.emoji} 💻 ${n}</div>
-    </div>`
-  ).join('');
+      <div class="walker-drink" id="wkd-${n}">☕</div>
+      <img class="walker-img" src="${h.sprite}?v=1" alt="${n}">
+    </div>`;
+  }).join('');
 
   if (liveTimer) clearInterval(liveTimer);
   const names = Object.keys(homes);
   const drinks = ['☕', '🧋', '🍵', '🥤'];
-  const step = () => {
-    const who = names[Math.floor(Math.random() * names.length)];
-    const el = document.getElementById('wk-' + who);
-    const chipEl = document.getElementById('wkc-' + who);
-    const sayEl = document.getElementById('wks-' + who);
-    if (!el || !sayEl || !chipEl) return;
-    const h = homes[who];
-    const goHome = Math.random() < 0.40;
+  const moveTo = (who, tx, ty, tf, line, isLounge) => {
+    const st = state[who], el = document.getElementById('wk-' + who), sayEl = document.getElementById('wks-' + who), drEl = document.getElementById('wkd-' + who);
+    if (!st || !el || st.busy) return;
+    st.busy = true;
     el.classList.remove('sipping');
     el.classList.add('walking');
-    chipEl.innerText = `${h.emoji} 🚶‍♀️ ${who}`;
-    if (goHome) {
-      el.style.left = (h.x + (Math.random() * 4 - 2)) + '%';
-      el.style.top = (h.y + (Math.random() * 4 - 2)) + '%';
-      sayEl.innerText = h.say[Math.floor(Math.random() * h.say.length)];
+    if (tx < st.x) el.classList.add('flip'); else el.classList.remove('flip');
+
+    const arrive = () => {
+      st.x = tx; st.y = ty; st.floor = tf;
+      el.style.opacity = '1';
+      el.style.left = tx + '%';
+      el.style.top = ty + '%';
+      if (sayEl && line) { sayEl.innerText = line; sayEl.classList.add('show'); setTimeout(() => sayEl.classList.remove('show'), 3600); }
       setTimeout(() => {
         el.classList.remove('walking');
-        chipEl.innerText = `${h.emoji} 💻 ${who}`;
-      }, 2300);
+        if (isLounge) {
+          el.classList.add('sipping');
+          if (drEl) drEl.innerText = drinks[Math.floor(Math.random() * drinks.length)];
+        }
+        st.busy = false;
+      }, 2100);
+    };
+
+    if (st.floor === tf) {
+      arrive();
+    } else {
+      // Walk to glass door on current floor, fade into elevator/corridor, emerge from target floor door!
+      const doorX = 87;
+      if (doorX < st.x) el.classList.add('flip'); else el.classList.remove('flip');
+      el.style.left = doorX + '%';
+      el.style.top = doorY[st.floor] + '%';
+      setTimeout(() => {
+        el.style.opacity = '0.15';
+        el.style.top = doorY[tf] + '%';
+        setTimeout(() => {
+          if (tx < doorX) el.classList.add('flip'); else el.classList.remove('flip');
+          arrive();
+        }, 700);
+      }, 1500);
+    }
+  };
+
+  const step = () => {
+    const who = names[Math.floor(Math.random() * names.length)];
+    const h = homes[who];
+    const goHome = Math.random() < 0.42;
+    if (goHome) {
+      moveTo(who, h.x + (Math.random()*3-1.5), h.y, h.floor, h.say[Math.floor(Math.random()*h.say.length)], false);
     } else {
       const sp = spots[Math.floor(Math.random() * spots.length)];
-      el.style.left = (sp.x + (Math.random() * 5 - 2.5)) + '%';
-      el.style.top = (sp.y + (Math.random() * 4 - 2)) + '%';
-      sayEl.innerText = sp.lines[Math.floor(Math.random() * sp.lines.length)];
-      setTimeout(() => {
-        el.classList.remove('walking');
-        if (sp.name === '라운지') {
-          el.classList.add('sipping');
-          const d = drinks[Math.floor(Math.random() * drinks.length)];
-          chipEl.innerText = `${h.emoji} ${d} ${who}`;
-        } else {
-          chipEl.innerText = `${h.emoji} 💬 ${who}`;
-        }
-      }, 2300);
+      if (who === '세나' && sp.name === '대표실') return;
+      moveTo(who, sp.x + (Math.random()*4-2), sp.y, sp.floor, sp.lines[Math.floor(Math.random()*sp.lines.length)], sp.name === '라운지');
     }
-    sayEl.classList.add('show');
-    setTimeout(() => { if (sayEl) sayEl.classList.remove('show'); }, 3400);
   };
-  setTimeout(step, 900);
-  liveTimer = setInterval(step, 3400);
+  setTimeout(step, 800);
+  liveTimer = setInterval(step, 3200);
 }
 function renderMapBubbles() {
   const appCnt = DATA.tickets.filter(t => isNeedApproval(t)).length;
@@ -746,11 +776,11 @@ function setMvp(name) {
 }
 function sendCoffee(name) {
   const el = document.getElementById('wk-' + name);
-  const chipEl = document.getElementById('wkc-' + name);
+  const drEl = document.getElementById('wkd-' + name);
   const sayEl = document.getElementById('wks-' + name);
-  if (el && chipEl && sayEl) {
+  if (el && sayEl) {
     el.classList.add('sipping');
-    chipEl.innerText = `${(ROLES[name]||{}).emoji||'💙'} ☕ ${name}`;
+    if (drEl) drEl.innerText = '☕';
     sayEl.innerText = '👑 대표님이 커피 쏘셨다!! 감사해요💖';
     sayEl.classList.add('show');
     setTimeout(() => sayEl.classList.remove('show'), 4500);
