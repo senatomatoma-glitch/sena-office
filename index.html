@@ -280,19 +280,20 @@
       <p>방 캐릭터를 누르면 담당 업무가, 아래 접수 큐 카드를 누르면 상세 메모까지 전부 열려요.</p>
     </div>
     <div class="map-wrap">
-      <img src="office.png?v=11" alt="MINT Office 3층 6실 빌딩">
+      <img src="office.png?v=12" alt="MINT Office 3층+지하 대회의실 빌딩">
       <div class="sky-fx" id="sky-fx"></div>
-      <button class="head-bubble boss" id="hb-세나" style="left:27%;top:7%;" onclick="showTab('approval', document.querySelectorAll('.tab-btn')[2])">👑 승인 0건</button>
-      <button class="head-bubble" id="hb-미향" style="left:27%;top:38%;" onclick="openMember('미향')">💬 ...</button>
-      <button class="head-bubble" id="hb-미유" style="left:73%;top:38%;" onclick="openMember('미유')">💬 ...</button>
-      <button class="head-bubble" id="hb-아카네" style="left:27%;top:66%;" onclick="openMember('아카네')">💬 ...</button>
-      <button class="head-bubble" id="hb-아이미" style="left:73%;top:66%;" onclick="openMember('아이미')">💬 ...</button>
-      <button class="pin" style="left:27%;top:32%;" onclick="openBoss()"><span class="pulse"></span>👑 CEO · 세나</button>
-      <button class="pin" style="left:73%;top:32%;" onclick="showTab('meeting', document.querySelectorAll('.tab-btn')[4])"><span class="pulse"></span>☕ 라운지 · 수다방</button>
-      <button class="pin" style="left:27%;top:62%;" onclick="openMember('미향')"><span class="pulse"></span>💙 총괄책임부장 · 미향</button>
-      <button class="pin" style="left:73%;top:62%;" onclick="openMember('미유')"><span class="pulse"></span>🌿 SNS부 · 미유</button>
-      <button class="pin" style="left:27%;top:92%;" onclick="openMember('아카네')"><span class="pulse"></span>🔑 숙박업부 · 아카네</button>
-      <button class="pin" style="left:73%;top:92%;" onclick="openMember('아이미')"><span class="pulse"></span>📊 전략부 · 아이미</button>
+      <button class="head-bubble boss" id="hb-세나" style="left:27%;top:5%;" onclick="showTab('approval', document.querySelectorAll('.tab-btn')[2])">👑 승인 0건</button>
+      <button class="head-bubble" id="hb-미향" style="left:27%;top:29%;" onclick="openMember('미향')">💬 ...</button>
+      <button class="head-bubble" id="hb-미유" style="left:73%;top:29%;" onclick="openMember('미유')">💬 ...</button>
+      <button class="head-bubble" id="hb-아카네" style="left:27%;top:52%;" onclick="openMember('아카네')">💬 ...</button>
+      <button class="head-bubble" id="hb-아이미" style="left:73%;top:52%;" onclick="openMember('아이미')">💬 ...</button>
+      <button class="pin" style="left:27%;top:24%;" onclick="openBoss()"><span class="pulse"></span>👑 CEO · 세나</button>
+      <button class="pin" style="left:73%;top:24%;" onclick="showTab('meeting', document.querySelectorAll('.tab-btn')[4])"><span class="pulse"></span>☕ 라운지 · 수다방</button>
+      <button class="pin" style="left:27%;top:47%;" onclick="openMember('미향')"><span class="pulse"></span>💙 총괄책임부장 · 미향</button>
+      <button class="pin" style="left:73%;top:47%;" onclick="openMember('미유')"><span class="pulse"></span>🌿 SNS부 · 미유</button>
+      <button class="pin" style="left:27%;top:70%;" onclick="openMember('아카네')"><span class="pulse"></span>🔑 숙박업부 · 아카네</button>
+      <button class="pin" style="left:73%;top:70%;" onclick="openMember('아이미')"><span class="pulse"></span>📊 전략부 · 아이미</button>
+      <button class="pin" style="left:50%;top:94%;" onclick="openConf()"><span class="pulse"></span>🤝 지하 대회의실 · 의견 정리</button>
       <div id="live-walkers"></div>
     </div>
     <div style="padding:0 14px;">
@@ -548,23 +549,31 @@ function renderBriefing() {
     }
   }
 }
+function openConf() {
+  showTab('queue', document.querySelectorAll('.tab-btn')[3]);
+  document.getElementById('queue-wrap').style.display='none';
+  document.getElementById('opinions-wrap').style.display='block';
+  document.getElementById('subtab-o-btn').classList.add('active');
+  document.getElementById('subtab-q-btn').classList.remove('active');
+}
 let liveTimer = null;
 function startLiveOffice() {
   const layer = document.getElementById('live-walkers');
   if (!layer) return;
   const homes = {
-    '미향': { x: 16, y: 51, emoji: '💙', say: ['오늘도 화이팅!', '일 잘 돌아가나~', '대표님 보고 가야지'] },
-    '미유': { x: 84, y: 51, emoji: '🌿', say: ['블로그 초안 쓰는 중', 'GA4 체크!', '아아 한 잔~'] },
-    '아카네': { x: 16, y: 80, emoji: '🔑', say: ['체크인 확인!', '메일함 이상 무', '게스트 후기 5점~'] },
-    '아이미': { x: 84, y: 80, emoji: '📊', say: ['수익화 분석 중', '교차검증 완료!', 'SEO 체크~'] },
+    '미향': { x: 16, y: 39, emoji: '💙', say: ['오늘도 화이팅!', '일 잘 돌아가나~', '대표님 보고 가야지'] },
+    '미유': { x: 84, y: 39, emoji: '🌿', say: ['블로그 초안 쓰는 중', 'GA4 체크!', '아아 한 잔~'] },
+    '아카네': { x: 16, y: 61, emoji: '🔑', say: ['체크인 확인!', '메일함 이상 무', '게스트 후기 5점~'] },
+    '아이미': { x: 84, y: 61, emoji: '📊', say: ['수익화 분석 중', '교차검증 완료!', 'SEO 체크~'] },
   };
   const spots = [
-    { name: '라운지', x: 72, y: 20, lines: ['☕ 라운지 휴식 중', '🍰 마카롱 꿀맛!', '💡 새 아이디어 떠올랐다!', '🌿 잠깐 쉬어가자~'] },
-    { name: '대표실', x: 36, y: 20, lines: ['👑 대표님 보고 중!', '✨ 잘 진행되고 있어요', '📋 확인 부탁드려요!'] },
-    { name: '미향방', x: 32, y: 50, lines: ['💬 미향아 잠깐만!', '🙌 오늘도 고생해!'] },
-    { name: '미유방', x: 67, y: 50, lines: ['🌿 미유야 글 잘 써져?', '📸 사진 예쁘다!'] },
-    { name: '아카네방', x: 32, y: 79, lines: ['🔑 아카네 예약 어때?', '📬 메일 확인 중?'] },
-    { name: '아이미방', x: 67, y: 79, lines: ['📊 아이미 숫자 어때?', '💡 전략 회의하자!'] },
+    { name: '라운지', x: 72, y: 15, lines: ['☕ 라운지 휴식 중', '🍰 마카롱 꿀맛!', '💡 새 아이디어 떠올랐다!', '🌿 잠깐 쉬어가자~'] },
+    { name: '대표실', x: 36, y: 15, lines: ['👑 대표님 보고 중!', '✨ 잘 진행되고 있어요', '📋 확인 부탁드려요!'] },
+    { name: '대회의실', x: 50, y: 84, lines: ['🤝 지하 대회의실 회의 중!', '📊 주간 전략 맞추는 중', '💡 다 같이 아이디어 회의!'] },
+    { name: '미향방', x: 32, y: 38, lines: ['💬 미향아 잠깐만!', '🙌 오늘도 고생해!'] },
+    { name: '미유방', x: 67, y: 38, lines: ['🌿 미유야 글 잘 써져?', '📸 사진 예쁘다!'] },
+    { name: '아카네방', x: 32, y: 60, lines: ['🔑 아카네 예약 어때?', '📬 메일 확인 중?'] },
+    { name: '아이미방', x: 67, y: 60, lines: ['📊 아이미 숫자 어때?', '💡 전략 회의하자!'] },
   ];
   layer.innerHTML = Object.entries(homes).map(([n, h]) =>
     `<div class="walker" id="wk-${n}" style="left:${h.x}%;top:${h.y}%;" onclick="openMember('${n}')">
