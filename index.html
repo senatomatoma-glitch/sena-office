@@ -263,22 +263,31 @@
   </div>
 
   <div id="tab-queue" class="section">
-    <input class="search-input" id="q-search" type="text" placeholder="🔍 티켓번호(T-168), 제목, 내용 검색..." oninput="renderQueue()">
-    <div class="filter-row" id="status-filters">
-      <button class="f-btn active" onclick="setQStatus('전체', this)">전체</button>
-      <button class="f-btn" onclick="setQStatus('결정 필요', this)">🔴 결정필요</button>
-      <button class="f-btn" onclick="setQStatus('실행 중', this)">🔵 실행중</button>
-      <button class="f-btn" onclick="setQStatus('검증 중', this)">🟠 검증중</button>
-      <button class="f-btn" onclick="setQStatus('보류', this)">⚪ 보류</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+      <button id="subtab-q-btn" class="f-btn active" style="padding:8px;font-size:12.5px;" onclick="document.getElementById('queue-wrap').style.display='block';document.getElementById('opinions-wrap').style.display='none';this.classList.add('active');document.getElementById('subtab-o-btn').classList.remove('active');">📋 접수 큐</button>
+      <button id="subtab-o-btn" class="f-btn" style="padding:8px;font-size:12.5px;" onclick="document.getElementById('queue-wrap').style.display='none';document.getElementById('opinions-wrap').style.display='block';this.classList.add('active');document.getElementById('subtab-q-btn').classList.remove('active');">📌 의견 정리</button>
     </div>
-    <div class="filter-row" id="owner-filters">
-      <button class="f-btn active" onclick="setQOwner('전체', this)">전원</button>
-      <button class="f-btn" onclick="setQOwner('미향', this)">미향</button>
-      <button class="f-btn" onclick="setQOwner('미유', this)">미유</button>
-      <button class="f-btn" onclick="setQOwner('아카네', this)">아카네</button>
-      <button class="f-btn" onclick="setQOwner('아이미', this)">아이미</button>
+    <div id="queue-wrap">
+      <input class="search-input" id="q-search" type="text" placeholder="🔍 티켓번호(T-168), 제목, 내용 검색..." oninput="renderQueue()">
+      <div class="filter-row" id="status-filters">
+        <button class="f-btn active" onclick="setQStatus('전체', this)">전체</button>
+        <button class="f-btn" onclick="setQStatus('결정 필요', this)">🔴 결정필요</button>
+        <button class="f-btn" onclick="setQStatus('실행 중', this)">🔵 실행중</button>
+        <button class="f-btn" onclick="setQStatus('검증 중', this)">🟠 검증중</button>
+        <button class="f-btn" onclick="setQStatus('보류', this)">⚪ 보류</button>
+      </div>
+      <div class="filter-row" id="owner-filters">
+        <button class="f-btn active" onclick="setQOwner('전체', this)">전원</button>
+        <button class="f-btn" onclick="setQOwner('미향', this)">미향</button>
+        <button class="f-btn" onclick="setQOwner('미유', this)">미유</button>
+        <button class="f-btn" onclick="setQOwner('아카네', this)">아카네</button>
+        <button class="f-btn" onclick="setQOwner('아이미', this)">아이미</button>
+      </div>
+      <div id="queue-list"></div>
     </div>
-    <div id="queue-list"></div>
+    <div id="opinions-wrap" style="display:none;">
+      <div id="opinions-list"></div>
+    </div>
   </div>
 
   <div id="tab-meeting" class="section">
@@ -288,8 +297,6 @@
       <p style="font-size:11px;">세나 · 미향 · 미유 · 아카네 · 아이미가 자유롭게 잡담하고 아이디어를 던지는 공간이에요.</p>
     </div>
     <div id="lounge-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
-    <div class="subhead"><h3>📌 회의 · 의견 정리</h3></div>
-    <div id="opinions-list"></div>
   </div>
   <div id="tab-status" class="section"><div class="member-grid" id="member-cards"></div></div>
   <div id="tab-secret" class="section">
