@@ -203,11 +203,11 @@
   /* 🤫 비밀 탭: 기본(전체)은 6열 2행으로 한눈에, 세부 필터 선택 시 한 줄 가로 스크롤 */
   #sec-filters.sec-grid {
     display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 4px; overflow-x: visible; padding-bottom: 4px;
+    gap: 3px; overflow-x: visible; padding-bottom: 4px;
   }
   #sec-filters.sec-grid .f-btn {
-    padding: 5px 2px; font-size: 10.5px; border-radius: 10px; text-align: center;
-    overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.3px;
+    padding: 5px 1px; font-size: 10px; border-radius: 10px; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.5px;
   }
   #sec-filters.sec-line {
     display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto;
@@ -421,8 +421,8 @@
       <input class="search-input" id="s-search" type="text" placeholder="🔍 이름, 가게, 지역, 컵 검색..." oninput="renderSecret()">
       <div class="filter-row sec-grid" id="sec-filters">
         <button class="f-btn active" onclick="setSecFilter('전체', this)">전체(9종)</button>
-        <button class="f-btn" onclick="setSecFilter('🟢', this)">🟢 지금가능</button>
-        <button class="f-btn" onclick="setSecFilter('🟡', this)">🟡 오늘예정</button>
+        <button class="f-btn" onclick="setSecFilter('🟢', this)">🟢지금가능</button>
+        <button class="f-btn" onclick="setSecFilter('🟡', this)">🟡오늘예정</button>
         <button class="f-btn" onclick="setSecFilter('card1', this)">1.통합가능</button>
         <button class="f-btn" onclick="setSecFilter('card2', this)">2.가게1위</button>
         <button class="f-btn" onclick="setSecFilter('card3', this)">3.신입</button>
