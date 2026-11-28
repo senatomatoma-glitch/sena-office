@@ -109,10 +109,10 @@
     50% { transform: translate(-50%, -50%) translateY(-3px); }
   }
   .walker {
-    position: absolute; transform: translate(-50%, -88%);
+    position: absolute; transform: translate(-50%, -92%);
     z-index: 5; pointer-events: auto; cursor: pointer;
-    height: 11.5%;
-    transition: left 2.1s cubic-bezier(.45,.05,.55,.95), top 2.1s cubic-bezier(.45,.05,.55,.95), opacity 0.35s ease;
+    height: 9.5%;
+    transition: left 1.8s cubic-bezier(.45,.05,.55,.95), top 1.8s cubic-bezier(.45,.05,.55,.95), opacity 0.25s ease;
     display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
   }
   .walker-img {
@@ -294,13 +294,13 @@
       <button class="head-bubble" id="hb-미유" style="left:73%;top:29%;" onclick="openMember('미유')">💬 ...</button>
       <button class="head-bubble" id="hb-아카네" style="left:27%;top:52%;" onclick="openMember('아카네')">💬 ...</button>
       <button class="head-bubble" id="hb-아이미" style="left:73%;top:52%;" onclick="openMember('아이미')">💬 ...</button>
-      <button class="pin" style="left:27%;top:24%;" onclick="openBoss()"><span class="pulse"></span>👑 CEO · 세나</button>
-      <button class="pin" style="left:73%;top:24%;" onclick="showTab('meeting', document.querySelectorAll('.tab-btn')[4])"><span class="pulse"></span>☕ 라운지 · 수다방</button>
-      <button class="pin" style="left:27%;top:47%;" onclick="openMember('미향')"><span class="pulse"></span>💙 총괄책임부장 · 미향</button>
-      <button class="pin" style="left:73%;top:47%;" onclick="openMember('미유')"><span class="pulse"></span>🌿 SNS부 · 미유</button>
-      <button class="pin" style="left:27%;top:70%;" onclick="openMember('아카네')"><span class="pulse"></span>🔑 숙박업부 · 아카네</button>
-      <button class="pin" style="left:73%;top:70%;" onclick="openMember('아이미')"><span class="pulse"></span>📊 전략부 · 아이미</button>
-      <button class="pin" style="left:50%;top:94%;" onclick="openConf()"><span class="pulse"></span>🤝 지하 대회의실 · 의견 정리</button>
+      <button class="pin" style="left:27%;top:25.5%;" onclick="openBoss()"><span class="pulse"></span>👑 CEO · 세나</button>
+      <button class="pin" style="left:73%;top:25.5%;" onclick="showTab('meeting', document.querySelectorAll('.tab-btn')[4])"><span class="pulse"></span>☕ 라운지 · 수다방</button>
+      <button class="pin" style="left:27%;top:48.5%;" onclick="openMember('미향')"><span class="pulse"></span>💙 총괄책임부장 · 미향</button>
+      <button class="pin" style="left:73%;top:48.5%;" onclick="openMember('미유')"><span class="pulse"></span>🌿 SNS부 · 미유</button>
+      <button class="pin" style="left:27%;top:71.5%;" onclick="openMember('아카네')"><span class="pulse"></span>🔑 숙박업부 · 아카네</button>
+      <button class="pin" style="left:73%;top:71.5%;" onclick="openMember('아이미')"><span class="pulse"></span>📊 전략부 · 아이미</button>
+      <button class="pin" style="left:50%;top:96%;" onclick="openConf()"><span class="pulse"></span>🤝 지하 대회의실 · 의견 정리</button>
       <div id="live-walkers"></div>
     </div>
     <div style="padding:0 14px;">
@@ -568,21 +568,21 @@ function startLiveOffice() {
   const layer = document.getElementById('live-walkers');
   if (!layer) return;
   const homes = {
-    '세나': { x: 27, y: 18, floor: 3, sprite: 'sprites/sena.png', boss: true, say: ['오늘도 화이팅!', '다들 잘 돌아가나~', '커피 한 잔 할까'] },
-    '미향': { x: 31, y: 41, floor: 2, sprite: 'sprites/mihyang.png', say: ['오늘도 화이팅!', '접수 큐 체크 중~', '대표님 보고 가야지'] },
-    '미유': { x: 70, y: 41, floor: 2, sprite: 'sprites/miyu.png', say: ['블로그 초안 쓰는 중', 'GA4 체크!', '아아 한 잔~'] },
-    '아카네': { x: 28, y: 64, floor: 1, sprite: 'sprites/akane.png', say: ['체크인 확인!', '메일함 이상 무', '게스트 후기 5점~'] },
-    '아이미': { x: 69, y: 64, floor: 1, sprite: 'sprites/aimi.png', say: ['수익화 분석 중', '교차검증 완료!', 'SEO 체크~'] },
+    '세나': { x: 20, y: 23, floor: 3, sprite: 'sprites/sena.png', boss: true, say: ['오늘도 화이팅!', '다들 잘 돌아가나~', '커피 한 잔 할까'] },
+    '미향': { x: 22, y: 46, floor: 2, sprite: 'sprites/mihyang.png', say: ['오늘도 화이팅!', '접수 큐 체크 중~', '대표님 보고 가야지'] },
+    '미유': { x: 80, y: 46, floor: 2, sprite: 'sprites/miyu.png', say: ['블로그 초안 쓰는 중', 'GA4 체크!', '아아 한 잔~'] },
+    '아카네': { x: 22, y: 69, floor: 1, sprite: 'sprites/akane.png', say: ['체크인 확인!', '메일함 이상 무', '게스트 후기 5점~'] },
+    '아이미': { x: 80, y: 69, floor: 1, sprite: 'sprites/aimi.png', say: ['수익화 분석 중', '교차검증 완료!', 'SEO 체크~'] },
   };
-  const doorY = { 3: 19, 2: 42, 1: 65, 0: 87 };
+  const doorY = { 3: 23, 2: 46, 1: 69, 0: 92 };
   const spots = [
-    { name: '라운지', x: 71, y: 18, floor: 3, lines: ['☕ 라운지 휴식 중', '🍰 마카롱 꿀맛!', '💡 새 아이디어 떠올랐다!', '🌿 잠깐 쉬어가자~'] },
-    { name: '대표실', x: 35, y: 18, floor: 3, lines: ['👑 대표님 보고 중!', '✨ 잘 진행되고 있어요', '📋 확인 부탁드려요!'] },
-    { name: '대회의실', x: 50, y: 87, floor: 0, lines: ['🤝 지하 대회의실 회의 중!', '📊 주간 전략 맞추는 중', '💡 다 같이 아이디어 회의!'] },
-    { name: '미향방', x: 34, y: 41, floor: 2, lines: ['💬 미향아 잠깐만!', '🙌 오늘도 고생해!'] },
-    { name: '미유방', x: 66, y: 41, floor: 2, lines: ['🌿 미유야 글 잘 써져?', '📸 사진 예쁘다!'] },
-    { name: '아카네방', x: 34, y: 64, floor: 1, lines: ['🔑 아카네 예약 어때?', '📬 메일 확인 중?'] },
-    { name: '아이미방', x: 66, y: 64, floor: 1, lines: ['📊 아이미 숫자 어때?', '💡 전략 회의하자!'] },
+    { name: '라운지', x: 61, y: 23, floor: 3, lines: ['☕ 라운지 휴식 중', '🍰 마카롱 꿀맛!', '💡 새 아이디어 떠올랐다!', '🌿 잠깐 쉬어가자~'] },
+    { name: '대표실', x: 38, y: 23, floor: 3, lines: ['👑 대표님 보고 중!', '✨ 잘 진행되고 있어요', '📋 확인 부탁드려요!'] },
+    { name: '대회의실', x: 50, y: 92, floor: 0, lines: ['🤝 지하 대회의실 회의 중!', '📊 주간 전략 맞추는 중', '💡 다 같이 아이디어 회의!'] },
+    { name: '미향방', x: 38, y: 46, floor: 2, lines: ['💬 미향아 잠깐만!', '🙌 오늘도 고생해!'] },
+    { name: '미유방', x: 62, y: 46, floor: 2, lines: ['🌿 미유야 글 잘 써져?', '📸 사진 예쁘다!'] },
+    { name: '아카네방', x: 38, y: 69, floor: 1, lines: ['🔑 아카네 예약 어때?', '📬 메일 확인 중?'] },
+    { name: '아이미방', x: 62, y: 69, floor: 1, lines: ['📊 아이미 숫자 어때?', '💡 전략 회의하자!'] },
   ];
   const state = {};
   layer.innerHTML = Object.entries(homes).map(([n, h]) => {
@@ -626,18 +626,22 @@ function startLiveOffice() {
       arrive();
     } else {
       // Walk to glass door on current floor, fade into elevator/corridor, emerge from target floor door!
-      const doorX = 87;
+      const doorX = 86;
       if (doorX < st.x) el.classList.add('flip'); else el.classList.remove('flip');
       el.style.left = doorX + '%';
       el.style.top = doorY[st.floor] + '%';
       setTimeout(() => {
-        el.style.opacity = '0.15';
-        el.style.top = doorY[tf] + '%';
+        el.style.opacity = '0';
         setTimeout(() => {
+          el.style.transition = 'none';
+          el.style.top = doorY[tf] + '%';
+          el.offsetHeight;
+          el.style.transition = '';
+          el.style.opacity = '1';
           if (tx < doorX) el.classList.add('flip'); else el.classList.remove('flip');
           arrive();
-        }, 700);
-      }, 1500);
+        }, 320);
+      }, 1550);
     }
   };
 
