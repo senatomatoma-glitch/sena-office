@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """비밀놀이 초고속 병렬 수집기.
 
-- 에스타마 3지역 월간 가게 랭킹 TOP5 + 테라피스트 랭킹(24시간·주간·월간)
-- 등록 11개 가게 + 에스타마 TOP5 가게(약 23곳)의 공식/포털 재적·출근·요금 페이지
+- 2026-11-28 월간 기준: 에스타마 월간 TOP5(梅田·日本橋·難波·心斎橋 出張 + 4지역 통합 出張/접객) 가게 31곳
+  (가게 목록은 work/secret_cache.json 이 확정 — 랭킹 수집은 폐지, 캐시의 월간 리스트 사용)
+- 등록 11개 가게 + 월간 TOP5 신규 가게(10곳)의 공식/포털 재적·출근·요금 페이지
 - 인물 이미지가 로컬에 없을 때만 downloads/secret-photos/ 로 다운로드
 - work/secret_live.json (수집 결과) + work/secret_fetch_report.json (성공/실패·소요·fallback)
 
@@ -19,7 +20,8 @@ UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JINA = 'https://r.jina.ai/'
 # 직접 접속이 막히는 호스트 → 리더 프록시 우선
-BLOCKED_HOSTS = {'www.genkaya.net', 'genkaya.net', 'hihouden.net', 'sumeragi-spa.com'}
+BLOCKED_HOSTS = {'www.genkaya.net', 'genkaya.net', 'hihouden.net', 'sumeragi-spa.com',
+                 'sukesukekan.com'}
 CACHE_PATH = os.path.join(BASE, 'work/secret_cache.json')
 PHOTO_DIR = os.path.join(BASE, 'downloads/secret-photos')
 LOGO_DIR = os.path.join(BASE, 'downloads/secret-logos')
@@ -84,8 +86,8 @@ def http_get(url, timeout=20):
                                    seconds=time.time() - t0)
                         return out
                     out['error'] = (out.get('error') or '') + f' | jina rc={rc}'
-                if 'name resolution' in (out.get('error') or '') or 'Could not resolve' in (out.get('error') or ''):
-                    break  # DNS 자체가 죽은 호스트 — 다른 경로 시도 무의미
+                if m != 'jina' and ('name resolution' in (out.get('error') or '') or 'Could not resolve' in (out.get('error') or '')):
+                    continue  # DNS가 죽어도 jina 프록시로는 읽히는 호스트가 있으므로 jina는 계속 시도
         if host == 'estama.jp' and out.get('error'):
             time.sleep(3.0)
     out['seconds'] = time.time() - t0
@@ -598,6 +600,175 @@ def parse_brand_ranking(text):
     return out
 
 
+def _split_by_anchor(text, pattern, span=6000):
+    """앵커(href) 위치마다 잘라 카드 블록들을 돌려준다 — 중첩 <a>(후기 링크) 때문에 정규식 한 번으로는 못 잡는 CMS용."""
+    marks = list(re.finditer(pattern, text))
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else m.start() + span
+        yield m, text[m.start():min(end, m.start() + span)]
+
+
+def parse_gal(text, host):
+    """gal CMS(/list/·/list/profile?uid=N) — 이름(나이)·T./컵·사진·프로필·신인·오늘 출근.
+    대상: 恋する放課後ヒロイン(koihiro.com), SUKI♡だらけ(sukidarake.com)."""
+    people = {}
+    idx = 0
+    for _m, chunk in _split_by_anchor(text, r'<a href="/list/profile\?uid=(\d+)"'):
+        pid = _m.group(1)
+        if 'dataHeightFixed' not in chunk or 'g_name' in chunk:
+            continue
+        nm = re.search(r'<h3>\s*(.*?)\s*</h3>', chunk, re.S)
+        if not nm:
+            continue
+        raw = re.sub(r'<[^>]+>', '', nm.group(1)).strip()
+        am = re.search(r'\((\d{2})\)\s*$', raw)
+        age = int(am.group(1)) if am else None
+        name = re.sub(r'\(\d{2}\)\s*$', '', raw).replace('\u3000', ' ').strip()
+        if not name:
+            continue
+        sz = re.search(r'dataHeightFixed">(.*?)</p>', chunk, re.S)
+        st = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', sz.group(1))).strip() if sz else ''
+        ht = re.search(r'T\.?\s?(\d{2,3})', st)
+        cup = re.search(r'\(([A-K])\)', st)
+        img = re.search(r'<img[^>]*data-original="([^"]+)"', chunk) or re.search(r'<img[^>]*src="(/wcms/[^"]+)"', chunk)
+        imgurl = None
+        if img:
+            u = img.group(1)
+            imgurl = u if u.startswith('http') else f'https://{host}{u}'
+        tt = re.search(r'iconToday">\s*本日\s*(\d{1,2}:\d{2})\s*[-～]\s*(\d{1,2}:\d{2})', chunk)
+        rec = dict(name=name, age=age, cup=cup.group(1) if cup else None,
+                   height=int(ht.group(1)) if ht else None,
+                   new=bool(re.search(r'iconNew|新入生|新人|NEW FACE', chunk)),
+                   img=imgurl, url=f'https://{host}/list/profile?uid={pid}', pid=pid, order=idx)
+        if tt:
+            rec['today'] = dict(open=tt.group(1), close=tt.group(2))
+        key = norm_name(name)
+        prev = people.get(key)
+        if prev:
+            for k2, v2 in prev.items():
+                if not rec.get(k2) and v2 is not None:
+                    rec[k2] = v2
+        people[key] = rec
+        idx += 1
+    return people
+
+
+def parse_gal_schedule(text):
+    """gal CMS /schedule/ — 카드의 <h4>HH:MM～HH:MM</h4> 가 오늘 출근시간."""
+    out = {}
+    for _m, chunk in _split_by_anchor(text, r'<a href="/list/profile\?uid=(\d+)"'):
+        if 'dataHeightFixed' not in chunk:
+            continue
+        nm = re.search(r'<h3>\s*(.*?)\s*</h3>', chunk, re.S)
+        tm = re.search(r'<h4>\s*(\d{1,2}:\d{2})\s*[～~-]\s*(\d{1,2}:\d{2})\s*</h4>', chunk)
+        if not nm or not tm:
+            continue
+        name = re.sub(r'\(\d{2}\)\s*$', '', re.sub(r'<[^>]+>', '', nm.group(1)).strip()).strip()
+        out[norm_name(name)] = dict(open=tm.group(1), close=tm.group(2), state='出勤', soldout=False)
+    return out
+
+
+def parse_gcms(text, host):
+    """genkaya 계열 CMS(/s/girl·/s/schedule) — c-panel 카드. 대상: Aroma Love(aroma-love.com)."""
+    people = {}
+    idx = 0
+    for _m, chunk in _split_by_anchor(text, r'href="https://[^"]+/s/profile\?lid=(\d+)"'):
+        pid = _m.group(1)
+        nm = re.search(r'c-panel__name">\s*(.*?)\s*</p>', chunk, re.S)
+        if not nm:
+            continue
+        raw = re.sub(r'<[^>]+>', '', nm.group(1)).strip()
+        am = re.search(r'\((\d{2})\)\s*$', raw)
+        age = int(am.group(1)) if am else None
+        name = re.sub(r'\(\d{2}\)\s*$', '', raw).replace('\u3000', ' ').strip()
+        if not name:
+            continue
+        sz = re.search(r'c-panel__size">(.*?)</p>', chunk, re.S)
+        st = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', sz.group(1))).strip() if sz else ''
+        ht = re.search(r'身長\s*(\d{2,3})\s*cm', st) or re.search(r'T\.?\s?(\d{2,3})', st)
+        cup = re.search(r'\(([A-K])\)', st)
+        bust = re.search(r'B\.?\s?(\d{2,3})', st)
+        img = re.search(r'<img[^>]*src="(https://[^"]+/photos/[^"]+)"', chunk)
+        tm = re.search(r'c-panel__time"><span>\s*(\d{1,2}:\d{2})\s*[-～]\s*(\d{1,2}:\d{2})', chunk)
+        rec = dict(name=name, age=age, cup=cup.group(1) if cup else None,
+                   height=int(ht.group(1)) if ht else None,
+                   bust=int(bust.group(1)) if bust else None,
+                   new=bool(re.search(r'beginner[^>]*>\s*NEW', chunk)),
+                   img=img.group(1) if img else None,
+                   url=f'https://{host}/s/profile?lid={pid}', pid=pid, order=idx)
+        if tm:
+            rec['today'] = dict(open=tm.group(1), close=tm.group(2))
+        key = norm_name(name)
+        prev = people.get(key)
+        if prev:
+            for k2, v2 in prev.items():
+                if not rec.get(k2) and v2 is not None:
+                    rec[k2] = v2
+        people[key] = rec
+        idx += 1
+    return people
+
+
+def parse_gcms_schedule(text, host=None):
+    """genkaya 계열 CMS /s/schedule — c-panel__time 이 오늘 출근시간(사진·프로필은 parse_gcms 와 동일)."""
+    out = {}
+    for nm, p in parse_gcms(text, host or 'aroma-love.com').items():
+        t = p.get('today') or {}
+        if t.get('open') and t.get('close'):
+            out[nm] = dict(open=t['open'], close=t['close'], state='出勤', soldout=False)
+    return out
+
+
+SUKE_NAME_PAT = re.compile(r'(?:^|[\[\n])\s*([^\[\]()\n]{1,16}?)\((\d{2})\)')
+SUKE_SIZE_PAT = re.compile(
+    r'T\.?\s*(\d{2,3})\s*/\s*B\.?\s*(\d{2,3})\s*\(([A-K])\)\s*/\s*W\.[\d.]+\s*/\s*H\.[\d.]+')
+
+
+def parse_suke(text, host='sukesukekan.com'):
+    """jina 리더 텍스트(sukesukekan.com/girl·/schedule) — 이미지 카드 + 이름(나이) + T./B.(컵)/W./H. (+시간)."""
+    people = {}
+    idx = 0
+    for chunk in re.split(r'(?=\[!\[Image \d+:)', text):
+        sz = SUKE_SIZE_PAT.search(chunk)
+        nm = SUKE_NAME_PAT.search(chunk)
+        if not sz or not nm:
+            continue
+        name = nm.group(1).replace('\u3000', ' ').strip()
+        if not name or name.isdigit():
+            continue
+        img = re.search(r'\[!\[Image \d+: ([^\]]+)\]\(([^)\s]+)\)', chunk)
+        um = re.search(r'profile\?lid=(\d+)', chunk)
+        tt = re.search(r'(\d{1,2}:\d{2})\s*[-～]\s*(\d{1,2}:\d{2})', chunk)
+        imgname = img.group(1).strip() if img else ''
+        rec = dict(name=name, age=int(nm.group(2)), cup=sz.group(3), height=int(sz.group(1)),
+                   bust=int(sz.group(2)),
+                   new=bool(img and 'NEW' in chunk[:chunk.find('\n', img.start()) if '\n' in chunk[img.start():] else len(chunk)]),
+                   img=img.group(2) if img else None,
+                   url=f'https://{host}/profile?lid={um.group(1)}' if um else f'https://{host}/girl',
+                   pid=um.group(1) if um else None, order=idx)
+        if tt:
+            rec['today'] = dict(open=tt.group(1), close=tt.group(2))
+        prev = people.get(norm_name(name))
+        if prev:
+            for k2, v2 in prev.items():
+                if not rec.get(k2) and v2 is not None:
+                    rec[k2] = v2
+        people[norm_name(name)] = rec
+        idx += 1
+    return people
+
+
+def parse_suke_schedule(text, host=None):
+    out = {}
+    for nm, p in parse_suke(text, host or 'sukesukekan.com').items():
+        t = p.get('today') or {}
+        if t.get('open') and t.get('close'):
+            out[nm] = dict(open=t['open'], close=t['close'], state='出勤', soldout=False)
+    return out
+
+
+NEW_ADAPTERS = ('gal', 'gcms', 'suke')
+
 OFFICIAL_PARSERS = {
     'brand': parse_brand_therapist,
     'genkaya': parse_genkaya_girl,
@@ -611,6 +782,9 @@ OFFICIAL_PARSERS = {
     'zenith': parse_zenith,
     'orenoie': parse_orenoie,
     'cream': parse_cream,
+    'gal': parse_gal,
+    'gcms': parse_gcms,
+    'suke': parse_suke,
 }
 
 
@@ -652,6 +826,20 @@ def build_tasks(cache):
     # 2026-11-28: 에스타마 월간 가게 랭킹·테라피스트 랭킹 수집은 제거 (세나 지시)
     for shop in cache['shops']:
         if not shop.get('active'):
+            continue
+        if shop.get('adapter') in ('gal', 'gcms', 'suke'):
+            # 월간 신규 가게: 공식 재적/출근 + (있으면) 에스타마 재적·출근표 보강
+            if shop.get('cast_url'):
+                tasks.append(dict(kind='official', shop=shop['key'], adapter=shop['adapter'], url=shop['cast_url']))
+            if shop.get('schedule_url'):
+                tasks.append(dict(kind='official_schedule', shop=shop['key'], adapter=shop['adapter'],
+                                  url=shop['schedule_url']))
+            if shop.get('fetch_estama') and shop.get('estama'):
+                _sid = shop.get('estama_cast') or shop.get('estama')
+                tasks.append(dict(kind='estama_shop', shop=shop['key'], sid=_sid,
+                                  url=f"https://estama.jp/shop/{_sid}/cast/"))
+                tasks.append(dict(kind='estama_schedule', shop=shop['key'], sid=_sid,
+                                  url=f"https://estama.jp/shop/{_sid}/schedule/"))
             continue
         if shop.get('adapter') == 'brand' and shop.get('cast_url'):
             tasks.append(dict(kind='official_brand', shop=shop['key'], adapter='brand', url=shop['cast_url']))
@@ -846,7 +1034,11 @@ def main():
             rep['parsed'] = len(ops)
         elif k == 'official':
             fn = OFFICIAL_PARSERS[r['adapter']]
-            ops = fn(txt)
+            if r['adapter'] in NEW_ADAPTERS:
+                host = re.sub(r'^https?://', '', r['url']).split('/')[0]
+                ops = fn(txt, host)
+            else:
+                ops = fn(txt)
             st = shop_status.setdefault(r['shop'], {})
             st['official'] = max(st.get('official', 0), len(ops))
             st['official_adapter'] = r['adapter']
@@ -865,7 +1057,11 @@ def main():
             rep['parsed'] = len(ops)
         elif k == 'official_schedule':
             fn = {'genkaya': parse_genkaya_schedule, 'hihouden': parse_hihouden_schedule,
-                  'superhappy': parse_superhappy_schedule, 'orenoie': parse_orenoie_schedule}[r['adapter']]
+                  'superhappy': parse_superhappy_schedule, 'orenoie': parse_orenoie_schedule,
+                  'gal': parse_gal_schedule, 'gcms': parse_gcms_schedule, 'suke': parse_suke_schedule,
+                  }.get(r['adapter'])
+            if fn is None:
+                continue
             sched = fn(txt)
             schedules.setdefault(r['shop'], {}).update(
                 {nm: dict(open=s['open'], close=s['close'], state=s.get('state', '出勤'),
@@ -989,7 +1185,7 @@ def main():
             src = rec.get('img_url') or rec.get('img')
             if not src:
                 continue
-            prefix = 'est' if (shops.get(rec['shop'], {}).get('adapter') == 'estama') else 'ms'
+            prefix = 'est' if shops.get(rec['shop'], {}).get('estama') else 'ms'
             sid = shops.get(rec['shop'], {}).get('estama') if prefix == 'est' else shops.get(rec['shop'], {}).get('ms')
             fn = f"{prefix}-{sid}-{rec.get('pid') or hashlib.md5(rec['name'].encode()).hexdigest()[:6]}.{img_ext(src)}"
             todo.append((rec, os.path.join(PHOTO_DIR, fn), src))

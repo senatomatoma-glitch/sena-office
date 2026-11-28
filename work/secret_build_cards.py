@@ -21,7 +21,7 @@ WDAY = ['월', '화', '수', '목', '금', '토', '일']
 
 ROLE_ORDER = ['등록 리스트', '가게 순위', '신입 대표', '최대 컵', '최연소', '연상 대표', 'H컵 대표']
 ROLE_LABEL_FN = {
-    '가게 순위': lambda p, shop: f"{shop.get('rank_label') or '본지명 랭킹'} 1위",
+    '가게 순위': lambda p, shop: (shop.get('rank_label') or '본지명 랭킹') + ('' if str(shop.get('rank_label') or '').endswith(('위', '1위')) else ' 1위'),
     '신입 대표': lambda p, shop: f"{p['shop']} 신입·체입 최대 컵 대표",
     '최대 컵': lambda p, shop: f"{p['shop']} 최대 컵 대표",
     '최연소': lambda p, shop: f"{p['shop']} 최연소·최대 컵 대표",
@@ -355,7 +355,7 @@ def build(live, cache, now):
             if c and c.get('age'):
                 rep = c
                 break
-        if not rep and shop.get('adapter') in ('estama', 'brand'):
+        if not rep and shop.get('adapter') in ('estama', 'brand', 'gal', 'gcms', 'suke'):
             order = sorted([p for p in live['people'] if p['shop'] == skey],
                            key=lambda x: (x.get('order') if x.get('order') is not None else 9999))
             for c in order:
@@ -364,7 +364,7 @@ def build(live, cache, now):
                     break
         if rep:
             reps2.append(rep)
-        elif shop.get('adapter') in ('estama', 'brand'):
+        elif shop.get('adapter') in ('estama', 'brand', 'gal', 'gcms', 'suke'):
             shop_level.append(shop)
 
     def dedupe_by_name(lst):
@@ -511,7 +511,7 @@ def download_selected(b, live):
             continue
         seen.add(k)
         shop = shops.get(p['shop'], {})
-        prefix = 'est' if shop.get('adapter') == 'estama' else 'ms'
+        prefix = 'est' if shop.get('estama') else 'ms'
         sid = shop.get('estama') if prefix == 'est' else shop.get('ms')
         ext = 'jpg'
         m = re.search(r'\.(jpe?g|png|webp)(?:\?|$)', src)
@@ -565,9 +565,15 @@ def main():
     t0 = datetime.datetime.now()
 
     b = build(live, cache, now)
-    total, got = download_selected(b, live)
-    # 사진 다운로드 실패 인원은 다시 선발에서 제외하고 1회 재계산
-    b = build(live, cache, now)
+    total = got = 0
+    for _ in range(4):
+        _t, _g = download_selected(b, live)
+        total += _t
+        got += _g
+        b = build(live, cache, now)
+        if _t == 0:
+            break
+    # 사진 다운로드 실패 인원은 다시 선발에서 제외하고 재계산(위 루프에서 반복)
     cards = render(b, live, cache, now)
     os.makedirs(os.path.join(BASE, out_dir), exist_ok=True)
     for name, txt in cards.items():
