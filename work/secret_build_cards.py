@@ -463,7 +463,7 @@ def render(b, live, cache, now):
     for p in sorted(b['reps2'], key=lambda x: display_order(x, now)):
         entries2.append(fmt_person(p, shops, {'가게 순위'}))
     out['card_2'] = card_wrap(
-        f"## 🏪 가게별 랭킹 1위 ({len(b['reps2'])}명 · Pinkyring 難波/日本橋 통합)",
+        f"## 🏪 가게별 랭킹 1위 ({len(b['reps2'])}명)",
         entries2)
     out['card_3'] = card_wrap(
         f"## 🌱 신입·체입 최대 컵 TOP 6 (E컵 이상) · {len(b['card3'])}명",
