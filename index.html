@@ -138,6 +138,15 @@
     40% { transform: translateY(-2px) rotate(-6deg); }
     70% { transform: translateY(-1px) rotate(3deg); }
   }
+  .sky-fx { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; border-radius: 20px; }
+  .rain-drop { position: absolute; width: 1.5px; height: 14px; background: linear-gradient(transparent, rgba(125,211,252,0.75)); animation: rainFall 0.9s linear infinite; }
+  @keyframes rainFall { 0% { transform: translateY(-20px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(420px); opacity: 0; } }
+  .sky-sun { background: radial-gradient(circle at 80% 12%, rgba(253,224,71,0.22), transparent 55%); }
+  .sky-night { background: linear-gradient(180deg, rgba(15,23,42,0.22), rgba(30,41,59,0.10) 60%, transparent); }
+  .mvp-badge { display: inline-block; background: linear-gradient(90deg,#F59E0B,#FBBF24); color: #fff; font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 8px; margin-left: 4px; box-shadow: 0 2px 6px rgba(245,158,11,.4); }
+  .goal-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; }
+  .goal-bar { height: 8px; background: #E2E8F0; border-radius: 999px; overflow: hidden; margin: 4px 0 8px; }
+  .goal-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #14B8A6, #34D399); }
   .walker-say {
     background: #1E293B; color: #fff; font-size: 9px; font-weight: 700;
     padding: 2px 6px; border-radius: 8px; margin-bottom: 3px; white-space: nowrap;
@@ -263,12 +272,16 @@
 
   <div id="tab-map" class="section active" style="padding:0;">
     <div class="banner">
-      <div class="banner-tag">👑 CEO 세나</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+        <div class="banner-tag">👑 CEO 세나</div>
+        <div id="osaka-weather-pill" style="background:rgba(255,255,255,0.88);border:1px solid var(--border);border-radius:999px;padding:3px 9px;font-size:11px;font-weight:800;color:var(--brown);">🌤️ 오사카 날씨 불러오는 중...</div>
+      </div>
       <h2>세나 대표님, 각 부서 방을 물어보세요</h2>
       <p>방 캐릭터를 누르면 담당 업무가, 아래 접수 큐 카드를 누르면 상세 메모까지 전부 열려요.</p>
     </div>
     <div class="map-wrap">
-      <img src="office.png?v=10" alt="MINT Office 3층 6실 빌딩">
+      <img src="office.png?v=11" alt="MINT Office 3층 6실 빌딩">
+      <div class="sky-fx" id="sky-fx"></div>
       <button class="head-bubble boss" id="hb-세나" style="left:27%;top:7%;" onclick="showTab('approval', document.querySelectorAll('.tab-btn')[2])">👑 승인 0건</button>
       <button class="head-bubble" id="hb-미향" style="left:27%;top:38%;" onclick="openMember('미향')">💬 ...</button>
       <button class="head-bubble" id="hb-미유" style="left:73%;top:38%;" onclick="openMember('미유')">💬 ...</button>
@@ -347,7 +360,10 @@
     </div>
     <div id="lounge-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
   </div>
-  <div id="tab-status" class="section"><div class="member-grid" id="member-cards"></div></div>
+  <div id="tab-status" class="section">
+    <div id="goal-board" class="goal-card"></div>
+    <div class="member-grid" id="member-cards"></div>
+  </div>
   <div id="tab-secret" class="section">
     <div id="secret-lock" class="lock-box" style="margin:12px auto;">
       <h1>🤫 비밀놀이 잠금</h1>
@@ -413,7 +429,7 @@ async function unlock(autoPw) {
     document.getElementById('lock-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     document.getElementById('hdr-sub').innerText = `부서별 5실 · ${DATA.updated}`;
-    renderBriefing(); renderMapQueue(); renderMapBubbles(); renderApproval(); renderQueue(); renderLounge(); renderOpinions(); renderMembers(); startLiveOffice();
+    renderBriefing(); renderMapQueue(); renderMapBubbles(); renderApproval(); renderQueue(); renderLounge(); renderOpinions(); renderMembers(); startLiveOffice(); loadOsakaWeather(); applyMvpPins();
   } catch (e) {
     localStorage.removeItem('sena_office_pin');
     document.getElementById('err-msg').innerText = '비밀번호가 맞지 않아!';
@@ -713,10 +729,94 @@ function renderOpinions() {
     ${o.conclusion?`<div class="t-meta" style="color:#1E9E63;font-weight:700;">결론/아카네: ${esc(o.conclusion)}</div>`:''}
   </div>`).join('');
 }
+function getMvp() { return localStorage.getItem('sena_office_mvp') || ''; }
+function setMvp(name) {
+  localStorage.setItem('sena_office_mvp', name);
+  applyMvpPins(); renderMembers();
+  if (document.getElementById('modal-bg').classList.contains('open')) openMember(name);
+}
+function sendCoffee(name) {
+  const el = document.getElementById('wk-' + name);
+  const chipEl = document.getElementById('wkc-' + name);
+  const sayEl = document.getElementById('wks-' + name);
+  if (el && chipEl && sayEl) {
+    el.classList.add('sipping');
+    chipEl.innerText = `${(ROLES[name]||{}).emoji||'💙'} ☕ ${name}`;
+    sayEl.innerText = '👑 대표님이 커피 쏘셨다!! 감사해요💖';
+    sayEl.classList.add('show');
+    setTimeout(() => sayEl.classList.remove('show'), 4500);
+  }
+  alert(`☕ ${name}에게 대표님 특별 커피를 쐈어요! 사무실 방에서 신나서 마시는 중!`);
+}
+function applyMvpPins() {
+  const mvp = getMvp();
+  document.querySelectorAll('.mvp-pin-tag').forEach(e => e.remove());
+  if (!mvp) return;
+  document.querySelectorAll('.pin').forEach(p => {
+    if (p.innerText.includes(mvp)) {
+      const sp = document.createElement('span');
+      sp.className = 'mvp-badge mvp-pin-tag';
+      sp.innerText = '🏆 MVP';
+      p.appendChild(sp);
+    }
+  });
+}
+async function loadOsakaWeather() {
+  const pill = document.getElementById('osaka-weather-pill');
+  const fx = document.getElementById('sky-fx');
+  try {
+    const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=34.6937&longitude=135.5023&current=temperature_2m,weather_code,is_day&timezone=Asia%2FTokyo');
+    const j = await res.json();
+    const cur = j.current || {};
+    const temp = Math.round(cur.temperature_2m ?? 15);
+    const code = cur.weather_code ?? 0;
+    const isDay = cur.is_day ?? 1;
+    const isRain = (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95;
+    const isCloud = code >= 2 && code <= 48;
+    const icon = isRain ? '🌧️' : (isCloud ? '⛅' : (isDay ? '☀️' : '🌙'));
+    const desc = isRain ? '비' : (isCloud ? '구름' : (isDay ? '맑음' : '야경'));
+    if (pill) pill.innerText = `${icon} 오사카 ${temp}°C · ${desc}`;
+    if (fx) {
+      fx.className = 'sky-fx ' + (!isDay ? 'sky-night' : (!isRain && !isCloud ? 'sky-sun' : ''));
+      if (isRain) {
+        fx.innerHTML = Array.from({length: 18}).map((_,i) =>
+          `<div class="rain-drop" style="left:${(i*5.5+2)%98}%;animation-delay:${(i*0.17)%1.2}s;animation-duration:${0.75+(i%3)*0.15}s;"></div>`
+        ).join('');
+      } else { fx.innerHTML = ''; }
+    }
+  } catch (e) {
+    if (pill) pill.innerText = '🌤️ 오사카';
+  }
+}
 function renderMembers() {
+  const gb = document.getElementById('goal-board');
+  if (gb) {
+    const doneCnt = (DATA.done_recent||[]).length;
+    const runCnt = DATA.tickets.filter(t=>t.status==='실행 중').length;
+    gb.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <strong style="font-size:13.5px;">📈 사업 목표 현황판</strong>
+      <span style="font-size:11px;color:var(--muted);">실행 ${runCnt} · 최근완료 ${doneCnt}건</span>
+    </div>
+    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🌿 블로그 월 수익 목표</span><b>목표 ¥100,000</b></div>
+    <div class="goal-bar"><div class="goal-fill" style="width:28%;"></div></div>
+    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🔑 에어비앤비 12월 목표 (5개 호실)</span><b>목표 ¥1,000,000</b></div>
+    <div class="goal-bar"><div class="goal-fill" style="width:62%;"></div></div>
+    <div style="font-size:11.5px;display:flex;justify-content:space-between;"><span>🏢 민트부동산 · 청소 운영</span><b>정상 가동 중</b></div>
+    <div class="goal-bar" style="margin-bottom:2px;"><div class="goal-fill" style="width:85%;"></div></div>`;
+  }
+  const mvp = getMvp();
   document.getElementById('member-cards').innerHTML = Object.keys(ROLES).map(name => {
     const r = ROLES[name], own = DATA.tickets.filter(t=>t.owner===name), ver = DATA.tickets.filter(t=>t.verifier===name && t.status==='검증 중');
-    return `<div class="m-card" onclick="openMember('${name}')"><h3>${r.emoji} ${name}</h3><div class="m-dept">${r.dept}</div><div class="m-role">${r.desc}</div><div class="m-stat">실행 ${own.length}건 · 검증대기 ${ver.length}건</div></div>`;
+    const isMvp = mvp === name;
+    return `<div class="m-card" onclick="openMember('${name}')">
+      <h3>${r.emoji} ${name} ${isMvp?'<span class="mvp-badge">🏆 MVP</span>':''}</h3>
+      <div class="m-dept">${r.dept}</div><div class="m-role">${r.desc}</div>
+      <div class="m-stat">실행 ${own.length}건 · 검증대기 ${ver.length}건</div>
+      <div style="display:flex;gap:5px;margin-top:8px;" onclick="event.stopPropagation();">
+        <button class="f-btn" style="font-size:10.5px;padding:4px 7px;" onclick="setMvp('${name}')">🏆 MVP</button>
+        <button class="f-btn" style="font-size:10.5px;padding:4px 7px;" onclick="sendCoffee('${name}')">☕ 커피</button>
+      </div>
+    </div>`;
   }).join('');
 }
 function openTicket(idx) {
@@ -731,8 +831,14 @@ function openTicket(idx) {
 }
 function openMember(name) {
   const r = ROLES[name], own = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=>t.owner===name), ver = DATA.tickets.map((t,i)=>({t,i})).filter(({t})=>t.verifier===name && t.status==='검증 중');
+  const isMvp = getMvp() === name;
   document.getElementById('modal-title').innerText = `${r.emoji} ${r.dept} · ${name}`;
-  document.getElementById('modal-body').innerHTML = `<p style="font-size:12px;color:#8C7A6B;margin-bottom:12px;">${r.desc}</p><h4 style="font-size:13px;margin-bottom:8px;">담당 실행 티켓 (${own.length}건)</h4>${own.map(({t,i})=>ticketCardHtml(t,i)).join('')||'<p class="t-meta">배정 없음</p>'}${ver.length?`<h4 style="font-size:13px;margin:12px 0 8px;">검증 대기 (${ver.length}건)</h4>`+ver.map(({t,i})=>ticketCardHtml(t,i)).join(''):''}`;
+  document.getElementById('modal-body').innerHTML = `<p style="font-size:12px;color:#8C7A6B;margin-bottom:8px;">${r.desc}</p>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="f-btn ${isMvp?'active':''}" onclick="setMvp('${name}')">🏆 ${isMvp?'오늘의 MVP!':'오늘의 MVP 지정'}</button>
+      <button class="f-btn" onclick="sendCoffee('${name}')">☕ 커피 쏘기</button>
+    </div>
+    <h4 style="font-size:13px;margin-bottom:8px;">담당 실행 티켓 (${own.length}건)</h4>${own.map(({t,i})=>ticketCardHtml(t,i)).join('')||'<p class="t-meta">배정 없음</p>'}${ver.length?`<h4 style="font-size:13px;margin:12px 0 8px;">검증 대기 (${ver.length}건)</h4>`+ver.map(({t,i})=>ticketCardHtml(t,i)).join(''):''}`;
   document.getElementById('modal-bg').classList.add('open');
 }
 function openBoss() {
