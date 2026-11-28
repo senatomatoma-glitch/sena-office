@@ -549,24 +549,37 @@ function renderCeoPretty(c) {
     return `<tr><td><b>${esc(m[1])}</b></td><td>${esc(m[2])}박</td><td style="text-align:right;font-weight:800;color:#047857;">¥${esc(m[3])}</td></tr>`;
   }).join('');
 
+  const dateKey = (c.date || '').slice(0, 10) || 'today';
+  const chkMap = JSON.parse(localStorage.getItem('sena_checks') || '{}');
+  const cardFb = (secKey, secTitle) => {
+    const cid = `CEO-${dateKey}-${secKey}`;
+    const isC = Boolean(chkMap[cid]);
+    return `<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);display:flex;align-items:center;gap:6px;">
+      <input type="checkbox" id="chk-${esc(cid)}" ${isC?'checked':''} onchange="saveCheckLocal('${esc(cid)}', this.checked)" title="확인 완료" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;">
+      <input type="text" id="cmt-${esc(cid)}" placeholder="${esc(secTitle)} 코멘트 입력..." style="flex:1;min-width:0;padding:6px 9px;border-radius:8px;border:1px solid var(--border);font-size:12px;font-family:inherit;background:#F8FAFC;">
+      <button class="f-btn active" style="padding:6px 10px;font-size:11.5px;flex-shrink:0;" onclick="sendSenaFeedback('briefing','${esc(cid)}','${esc(c.author||'아카네')}')">📤</button>
+    </div>`;
+  };
+  let secN = 0;
   const secHtml = blocks.map(blk => {
     const cleanHead = blk.replace(/^\*\*|\*\*$/g, '');
     if (/^\*\*11\/\d+/.test(blk)) {
       return `<div style="font-size:11.5px;font-weight:800;color:var(--accent-dark);margin:0 0 8px 2px;">🗓️ ${esc(cleanHead)}</div>`;
     }
+    secN++;
     if (blk.includes('오늘 일정') || /\d{1,2}:\d{2}[–\-]\d{1,2}:\d{2}/.test(blk)) {
       const lines = blk.split('\n').filter(l => l.trim() && !/^\*\*오늘 일정\*\*$/.test(l.trim()));
       const items = lines.map(l => `<div class="bf-tl-item">${formatMdRich(l.replace(/^-\s*/, ''))}</div>`).join('');
-      return `<div class="bf-card"><div class="bf-h">📅 오늘 일정 타임라인</div><div class="bf-tl">${items}</div></div>`;
+      return `<div class="bf-card"><div class="bf-h">📅 오늘 일정 타임라인</div><div class="bf-tl">${items}</div>${cardFb('일정'+secN,'오늘 일정')}</div>`;
     }
     if (blk.includes('중요 메일') || blk.includes('Google') || blk.includes('PIVOT')) {
-      return `<div class="bf-card" style="border-left:3.5px solid #F59E0B;"><div class="bf-h" style="color:#B45309;">📬 중요 메일 · 보안</div><div style="font-size:12px;line-height:1.55;color:#334155;">${formatMdRich(blk.replace(/^\*\*중요 메일\*\*\s*·?\s*/, ''))}</div></div>`;
+      return `<div class="bf-card" style="border-left:3.5px solid #F59E0B;"><div class="bf-h" style="color:#B45309;">📬 중요 메일 · 보안</div><div style="font-size:12px;line-height:1.55;color:#334155;">${formatMdRich(blk.replace(/^\*\*중요 메일\*\*\s*·?\s*/, ''))}</div>${cardFb('메일'+secN,'중요 메일')}</div>`;
     }
     if (blk.includes('시아와세')) {
       const tbl = resRows ? `<table class="bf-tbl"><thead><tr><th>예약 기간</th><th>박수</th><th style="text-align:right;">호스트 수입</th></tr></thead><tbody>${resRows}<tr><td colspan="2"><b>신규 예약 합계</b></td><td style="text-align:right;font-weight:900;color:#0284C7;">¥${yenTotal.toLocaleString()}</td></tr></tbody></table>` : '';
-      return `<div class="bf-card"><div class="bf-h">🔑 시아와세 · 숙소 브리핑</div>${tbl}<div style="font-size:12px;line-height:1.55;margin-top:8px;color:#334155;">${formatMdRich(blk.replace(/^\*\*시아와세\*\*\s*·?\s*/, ''))}</div></div>`;
+      return `<div class="bf-card"><div class="bf-h">🔑 시아와세 · 숙소 브리핑</div>${tbl}<div style="font-size:12px;line-height:1.55;margin-top:8px;color:#334155;">${formatMdRich(blk.replace(/^\*\*시아와세\*\*\s*·?\s*/, ''))}</div>${cardFb('숙소'+secN,'숙소 브리핑')}</div>`;
     }
-    return `<div class="bf-card"><div class="bf-h">📌 기타 안내</div><div style="font-size:12px;line-height:1.55;color:#334155;">${formatMdRich(blk)}</div></div>`;
+    return `<div class="bf-card"><div class="bf-h">📌 기타 안내</div><div style="font-size:12px;line-height:1.55;color:#334155;">${formatMdRich(blk)}</div>${cardFb('기타'+secN,'기타 안내')}</div>`;
   }).join('');
   const bId = 'CEO-' + (c.date || '').slice(0, 10);
   const bChk = Boolean((JSON.parse(localStorage.getItem('sena_checks') || '{}'))[bId]);
